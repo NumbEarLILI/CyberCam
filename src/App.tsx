@@ -592,18 +592,8 @@ export function App() {
     <div className="app" data-hold={shownHold}>
       <div className={view === "camera" ? "camera-shell" : "camera-shell hidden"}>
           <header className="top">
-            <div className="top-side">
-              <button type="button" className="ghost" onClick={() => setView("gallery")}>
-                相册 {shots.length}
-              </button>
-            </div>
             <div className="brand">
               <strong>CyberCam</strong>
-            </div>
-            <div className="top-side end">
-              <button type="button" className="ghost" onClick={() => fileRef.current?.click()}>
-                导入
-              </button>
             </div>
           </header>
 
@@ -622,7 +612,7 @@ export function App() {
               <canvas ref={sensorRef} className={source === "live" ? "sensor-hidden" : "fill"} />
               <canvas ref={previewRef} className="fill preview" />
               <div className="thirds" />
-              {cameraError && source === "live" ? <p className="finder-empty">没有打开摄像头。可以从上方导入一张照片。</p> : null}
+              {cameraError && source === "live" ? <p className="finder-empty">没有打开摄像头。可以点快门右侧的导入。</p> : null}
               {flash ? <div className="flash" /> : null}
               <div className="hud">
                 <button type="button" className="chip" onClick={() => setPicker("camera")}>
@@ -679,7 +669,13 @@ export function App() {
           </div>
 
           <footer className="dock">
+            <button type="button" className="ghost dock-side" onClick={() => setView("gallery")}>
+              相册 {shots.length}
+            </button>
             <button type="button" className="shutter" aria-label="快门" onClick={() => void shoot()} disabled={phase !== null} />
+            <button type="button" className="ghost dock-side" onClick={() => fileRef.current?.click()}>
+              导入
+            </button>
           </footer>
           </div>
           <input

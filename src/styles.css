@@ -43,15 +43,12 @@ em { font-style: normal; color: var(--muted); }
 .camera-shell.hidden { display: none; }
 .top, .dock { width: min(880px, 100%); margin: 0 auto; }
 .top {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  display: flex;
+  justify-content: center;
   align-items: center;
-  gap: 12px;
-  padding: 16px 20px 0;
-  min-height: 64px;
+  padding: 12px 20px 0;
+  min-height: 44px;
 }
-.top-side { display: flex; min-width: 0; }
-.top-side.end { justify-content: flex-end; }
 .brand { display: flex; justify-content: center; margin: 0; }
 .brand strong { letter-spacing: 0.14em; font-size: 13px; text-transform: uppercase; }
 .brand span, .meta, .eyebrow { color: var(--muted); letter-spacing: 0.12em; text-transform: uppercase; font-size: 11px; }
@@ -371,11 +368,13 @@ em { font-style: normal; color: var(--muted); }
 .dock {
   position: relative;
   z-index: 2;
-  display: flex;
-  justify-content: center;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  padding: 12px 20px calc(8px + var(--inset-bottom));
+  justify-items: center;
+  padding: 8px 16px calc(8px + var(--inset-bottom));
 }
+.dock-side { min-width: 5.5em; }
 .shutter {
   width: 78px;
   height: 78px;
