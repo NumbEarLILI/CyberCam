@@ -131,6 +131,7 @@ final class CameraSession {
                 CaptureRequest.Builder builder = device.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
                 builder.addTarget(stillReader.getSurface());
                 builder.set(CaptureRequest.JPEG_ORIENTATION, orientation());
+                builder.set(CaptureRequest.JPEG_QUALITY, (byte) 97);
                 builder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
                 session.capture(builder.build(), null, handler);
             } catch (Exception exception) {
@@ -153,7 +154,7 @@ final class CameraSession {
     private void configure(CameraDevice camera, CameraCatalog.Entry target, int ticket, boolean routePhysical) {
         try {
             Size previewSize = CameraCatalog.choose(target.characteristics, ImageFormat.YUV_420_888, 1280);
-            Size stillSize = CameraCatalog.chooseLargest(target.characteristics, ImageFormat.JPEG, 2560);
+            Size stillSize = CameraCatalog.chooseLargest(target.characteristics, ImageFormat.JPEG, 4096);
             previewReader = ImageReader.newInstance(previewSize.getWidth(), previewSize.getHeight(), ImageFormat.YUV_420_888, 2);
             stillReader = ImageReader.newInstance(stillSize.getWidth(), stillSize.getHeight(), ImageFormat.JPEG, 2);
             previewReader.setOnImageAvailableListener(reader -> onPreview(reader, ticket), handler);

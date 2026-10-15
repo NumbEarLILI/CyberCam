@@ -532,7 +532,12 @@ export function App() {
     const size = fitSize(img.naturalWidth, img.naturalHeight, STILL_MAX_EDGE);
     canvas.width = size.width;
     canvas.height = size.height;
-    canvas.getContext("2d")?.drawImage(img, 0, 0, size.width, size.height);
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(img, 0, 0, size.width, size.height);
+    }
     sensorEpoch.current += 1;
     setZoom(1);
     setSource("import");

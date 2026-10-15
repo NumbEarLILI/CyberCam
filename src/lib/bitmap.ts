@@ -25,6 +25,8 @@ export function readSource(
   canvas.height = size.height;
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) throw new Error("无法读取画面");
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
   if (mirror) {
     ctx.translate(size.width, 0);
     ctx.scale(-1, 1);
@@ -82,7 +84,7 @@ export function rgbaToBlob(
   width: number,
   height: number,
   type: "image/jpeg" | "image/png" = "image/jpeg",
-  quality = 0.92,
+  quality = 0.97,
 ): Promise<Blob> {
   const canvas = document.createElement("canvas");
   canvas.width = width;

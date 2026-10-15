@@ -1,9 +1,9 @@
-/** Longest edge kept for a still. High enough to use a phone sensor, small enough to develop on the device. */
-export const STILL_MAX_EDGE = 2560;
+/** Longest edge kept for a still. A 12MP phone frame fits; larger sensors are scaled down to this. */
+export const STILL_MAX_EDGE = 4096;
 
-/** Ask the camera for its native 4:3 field instead of a 16:9 1080p crop. */
-export const SENSOR_WIDTH = 3840;
-export const SENSOR_HEIGHT = 2880;
+/** Ask the camera for a 4:3 frame large enough for a 12MP still. */
+export const SENSOR_WIDTH = 4096;
+export const SENSOR_HEIGHT = 3072;
 
 export function framedProfile<T extends { aspect: number }>(profile: T, portrait: boolean | undefined): T {
   return { ...profile, aspect: orientedAspect(profile.aspect, Boolean(portrait)) };

@@ -24,6 +24,7 @@ export function Review({ shot, onClose, onUpdate, onDelete }: Props) {
   const [urls, setUrls] = useState<Partial<Record<Stage, string>>>({});
   const [working, setWorking] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [pixels, setPixels] = useState("");
   const urlsRef = useRef<string[]>([]);
   const lock = useRef(false);
   const camera = getCamera(shot.cameraId);
@@ -64,6 +65,10 @@ export function Review({ shot, onClose, onUpdate, onDelete }: Props) {
       urlsRef.current = [];
     };
   }, []);
+
+  useEffect(() => {
+    setPixels("");
+  }, [stage, urls]);
 
   async function redevelop(patch: Partial<Pick<Shot, "cameraId" | "filmId" | "ev" | "iso" | "shutter" | "aperture">>) {
     if (lock.current) return;
@@ -122,7 +127,18 @@ export function Review({ shot, onClose, onUpdate, onDelete }: Props) {
       </header>
 
       <div className={working ? "review-frame working" : "review-frame"}>
-        {urls[stage] ? <img src={urls[stage]} alt="" /> : <p className="waiting">正在从 RAW 生成这一步</p>}
+        {urls[stage] ? (
+          <img
+            src={urls[stage]}
+            alt=""
+            onLoad={(event) => {
+              const image = event.currentTarget;
+              setPixels(`${image.naturalWidth}×${image.naturalHeight}`);
+            }}
+          />
+        ) : (
+          <p className="waiting">正在从 RAW 生成这一步</p>
+        )}
         {working ? <p className="veil">正在重新显影</p> : null}
       </div>
 
@@ -188,7 +204,7 @@ export function Review({ shot, onClose, onUpdate, onDelete }: Props) {
           下载 RAW
         </button>
         <button type="button" className="line-btn solid" onClick={() => void downloadBuffer(shot.jpeg, `${base}.jpg`, "image/jpeg")}>
-          下载成片 · {formatBytes(shot.jpeg.byteLength)}
+          下载成片{stage === "film" && pixels ? ` · ${pixels}` : ""} · {formatBytes(shot.jpeg.byteLength)}
         </button>
       </div>
     </section>

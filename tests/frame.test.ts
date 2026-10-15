@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { frameSize, orientedAspect, sensorConstraints, SENSOR_HEIGHT, SENSOR_WIDTH } from "../src/lib/frame";
+import { fitSize } from "../src/lib/bitmap";
+import { frameSize, orientedAspect, sensorConstraints, SENSOR_HEIGHT, SENSOR_WIDTH, STILL_MAX_EDGE } from "../src/lib/frame";
 
 describe("frame orientation", () => {
   it("turns a landscape film gate upright in portrait and leaves square gates square", () => {
@@ -26,6 +27,9 @@ describe("frame orientation", () => {
     expect(open.width).toEqual({ ideal: SENSOR_WIDTH });
     expect(open.height).toEqual({ ideal: SENSOR_HEIGHT });
     expect(SENSOR_WIDTH / SENSOR_HEIGHT).toBeCloseTo(4 / 3);
+    expect(STILL_MAX_EDGE).toBe(4096);
+    expect(fitSize(4000, 3000, STILL_MAX_EDGE)).toEqual({ width: 4000, height: 3000 });
+    expect(Math.max(...Object.values(fitSize(8000, 6000, STILL_MAX_EDGE)))).toBe(4096);
     expect(open).not.toHaveProperty("aspectRatio");
     expect(sensorConstraints("cam-2").deviceId).toEqual({ exact: "cam-2" });
   });
