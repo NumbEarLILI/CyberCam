@@ -24,10 +24,17 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK packages
-        run: sdkmanager --install "platforms;android-36" "build-tools;35.0.0" "build-tools;36.0.0"
+      - name: Install Android SDK
+        run: |
+          sdk="$HOME/android-sdk"
+          mkdir -p "$sdk/cmdline-tools"
+          curl -fsSL -o /tmp/cmdtools.zip https://dl.google.com/android/repository/commandlinetools-linux-16111833_latest.zip
+          unzip -q /tmp/cmdtools.zip -d "$sdk/cmdline-tools"
+          mv "$sdk/cmdline-tools/cmdline-tools" "$sdk/cmdline-tools/latest"
+          yes | "$sdk/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$sdk" --licenses >/dev/null
+          "$sdk/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$sdk" --install "platform-tools" "platforms;android-36" "build-tools;35.0.0" "build-tools;36.0.0"
+          echo "ANDROID_HOME=$sdk" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$sdk" >> "$GITHUB_ENV"
 
       - name: Install npm dependencies
         run: npm ci
