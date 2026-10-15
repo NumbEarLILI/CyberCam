@@ -9,19 +9,24 @@ import { copyBytes, fitSize, readSource, rgbaToBlob } from "./lib/bitmap";
 import { deleteShot, loadShots, saveShot, type Shot } from "./lib/db";
 import { applyCamera, applyFilm, rawToFloat } from "./lib/develop";
 import { createFinder } from "./lib/finder";
+import { lensLabel, shouldMirrorTrack, type Lens } from "./lib/lenses";
 import { encodeRaw, rgba8ToRaw } from "./lib/raw";
-import { drawBenchScene } from "./lib/scene";
 
-type Source = "live" | "scene" | "import";
+type Source = "live" | "import";
 type Phase = "raw" | "optics" | "film";
+type Picker = "camera" | "film" | "lens" | null;
 
 export function App() {
   const [cameraId, setCameraId] = useState("leica-m6");
   const [filmId, setFilmId] = useState("portra-400");
   const [ev, setEv] = useState(0);
-  const [source, setSource] = useState<Source>("scene");
+  const [source, setSource] = useState<Source>("live");
   const [mirror, setMirror] = useState(false);
-  const [picker, setPicker] = useState<"camera" | "film" | null>(null);
+  const [picker, setPicker] = useState<Picker>(null);
+  const [deviceId, setDeviceId] = useState<string | null>(null);
+  const [lenses, setLenses] = useState<Lens[]>([]);
+  const [activeDeviceId, setActiveDeviceId] = useState<string | null>(null);
+  const [cameraError, setCameraError] = useState(false);
   const [view, setView] = useState<"camera" | "gallery" | "review">("camera");
   const [shots, setShots] = useState<Shot[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -73,48 +78,65 @@ export function App() {
     return () => observer.disconnect();
   }, [camera.profile.aspect, view]);
 
+  const refreshLenses = useCallback(async () => {
+    if (!navigator.mediaDevices?.enumerateDevices) return;
+    const listed = await navigator.mediaDevices.enumerateDevices();
+    const videos = listed.filter((item) => item.kind === "videoinput" && item.deviceId);
+    setLenses(videos.map((item, index) => ({ deviceId: item.deviceId, label: lensLabel(item.label, index) })));
+  }, []);
+
   useEffect(() => {
-    if (source !== "scene") return;
-    const canvas = sensorRef.current;
-    if (!canvas) return;
-    canvas.width = 1200;
-    canvas.height = 800;
-    const ctx = canvas.getContext("2d");
-    if (ctx) drawBenchScene(ctx, canvas.width, canvas.height);
-    sensorEpoch.current += 1;
-  }, [source]);
+    if (!navigator.mediaDevices?.addEventListener) return;
+    const onChange = () => {
+      void refreshLenses();
+    };
+    navigator.mediaDevices.addEventListener("devicechange", onChange);
+    return () => navigator.mediaDevices.removeEventListener("devicechange", onChange);
+  }, [refreshLenses]);
 
   useEffect(() => {
     if (source !== "live") return;
     let stream: MediaStream | null = null;
     let cancelled = false;
+    const video: MediaTrackConstraints = deviceId
+      ? { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+      : { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } };
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraError(true);
+      setMessage("没有打开摄像头。可以导入一张照片。");
+      return;
+    }
     navigator.mediaDevices
-      .getUserMedia({
-        audio: false,
-        video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
-      })
+      .getUserMedia({ audio: false, video })
       .then(async (next) => {
         if (cancelled) {
           next.getTracks().forEach((track) => track.stop());
           return;
         }
         stream = next;
-        const video = videoRef.current;
-        if (!video) return;
-        video.srcObject = next;
-        await video.play();
-        const facing = next.getVideoTracks()[0]?.getSettings().facingMode;
-        setMirror(facing !== "environment");
+        const element = videoRef.current;
+        if (!element) return;
+        element.srcObject = next;
+        await element.play();
+        const track = next.getVideoTracks()[0];
+        const settings = track?.getSettings();
+        setActiveDeviceId(settings?.deviceId ?? deviceId);
+        setMirror(shouldMirrorTrack(settings?.facingMode, track?.label ?? ""));
+        setCameraError(false);
+        await refreshLenses();
       })
       .catch(() => {
-        setMessage("没有打开相机。可以先用试拍场景看不同胶卷的差别。");
-        setSource("scene");
+        if (cancelled) return;
+        setCameraError(true);
+        setMessage("没有打开摄像头。可以导入一张照片。");
       });
     return () => {
       cancelled = true;
       stream?.getTracks().forEach((track) => track.stop());
+      const element = videoRef.current;
+      if (element) element.srcObject = null;
     };
-  }, [source]);
+  }, [deviceId, refreshLenses, source]);
 
   const grab = useCallback(
     (maxEdge: number) => {
@@ -289,28 +311,17 @@ export function App() {
     <div className="app">
       <div className={view === "camera" ? "camera-shell" : "camera-shell hidden"}>
           <header className="top">
+            <div className="top-side">
+              <button type="button" className="ghost" onClick={() => setView("gallery")}>
+                相册 {shots.length}
+              </button>
+            </div>
             <div className="brand">
               <strong>CyberCam</strong>
-              <span>先写 RAW，再显影</span>
             </div>
-            <div className="pickers">
-              <button type="button" className="picker-card" onClick={() => setPicker("camera")}>
-                <span className="art-slot">
-                  <CameraArt id={camera.id} />
-                </span>
-                <span>
-                  <span className="meta">机身 · {camera.format}</span>
-                  <strong>{camera.name}</strong>
-                </span>
-              </button>
-              <button type="button" className="picker-card" onClick={() => setPicker("film")}>
-                <span className="art-slot film">
-                  <FilmArt id={film.id} />
-                </span>
-                <span>
-                  <span className="meta">胶卷 · ISO {film.iso}</span>
-                  <strong>{film.name}</strong>
-                </span>
+            <div className="top-side end">
+              <button type="button" className="ghost" onClick={() => fileRef.current?.click()}>
+                导入
               </button>
             </div>
           </header>
@@ -321,20 +332,33 @@ export function App() {
               <canvas ref={sensorRef} className={source === "live" ? "sensor-hidden" : "fill"} />
               <canvas ref={previewRef} className="fill preview" />
               <div className="thirds" />
+              {cameraError && source === "live" ? <p className="finder-empty">没有打开摄像头。可以从上方导入一张照片。</p> : null}
               {flash ? <div className="flash" /> : null}
             </div>
           </div>
 
           <footer className="dock">
-            <p className="recipe">
-              取景已套上 {camera.name} + {film.name}。快门仍先保存未调色的线性 RAW。
-            </p>
-            <div className="controls">
-              <button type="button" className="dock-btn" onClick={() => setView("gallery")}>
-                <span className="count">{shots.length}</span>
-                相册
+            <div className="looks">
+              <button type="button" className="look" onClick={() => setPicker("camera")}>
+                <span className="art-slot">
+                  <CameraArt id={camera.id} />
+                </span>
+                <span>
+                  <span className="meta">机身</span>
+                  <strong>{camera.name}</strong>
+                </span>
               </button>
-              <button type="button" className="shutter" aria-label="快门" onClick={() => void shoot()} disabled={phase !== null} />
+              <button type="button" className="look" onClick={() => setPicker("film")}>
+                <span className="art-slot film">
+                  <FilmArt id={film.id} />
+                </span>
+                <span>
+                  <span className="meta">胶卷</span>
+                  <strong>{film.name}</strong>
+                </span>
+              </button>
+            </div>
+            <div className="controls">
               <div className="ev">
                 <button type="button" onClick={() => setEv((value) => clampEv(value - 0.5))} aria-label="降低曝光">
                   −
@@ -344,16 +368,17 @@ export function App() {
                   +
                 </button>
               </div>
-            </div>
-            <div className="sources">
-              <button type="button" className={source === "live" ? "on" : ""} onClick={() => setSource("live")}>
-                相机
-              </button>
-              <button type="button" className={source === "scene" ? "on" : ""} onClick={() => setSource("scene")}>
-                试拍场景
-              </button>
-              <button type="button" className={source === "import" ? "on" : ""} onClick={() => fileRef.current?.click()}>
-                导入照片
+              <button type="button" className="shutter" aria-label="快门" onClick={() => void shoot()} disabled={phase !== null} />
+              <button
+                type="button"
+                className="lens-btn"
+                onClick={() => {
+                  void refreshLenses();
+                  setPicker("lens");
+                }}
+              >
+                <span className="meta">{source === "import" ? "画面" : "摄像头"}</span>
+                <strong>{source === "import" ? "导入的照片" : (lenses.find((lens) => lens.deviceId === activeDeviceId)?.label ?? "正在打开")}</strong>
               </button>
             </div>
           </footer>
@@ -394,6 +419,8 @@ export function App() {
         picker={picker}
         cameraId={cameraId}
         filmId={filmId}
+        lenses={lenses}
+        activeLensId={activeDeviceId}
         onClose={() => setPicker(null)}
         onPickCamera={(id) => {
           setCameraId(id);
@@ -401,6 +428,13 @@ export function App() {
         }}
         onPickFilm={(id) => {
           setFilmId(id);
+          setPicker(null);
+        }}
+        onPickLens={(id) => {
+          setDeviceId(id);
+          setActiveDeviceId(id);
+          setCameraError(false);
+          setSource("live");
           setPicker(null);
         }}
       />
