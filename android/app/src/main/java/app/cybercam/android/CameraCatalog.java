@@ -96,6 +96,23 @@ final class CameraCatalog {
         return best;
     }
 
+    static Size chooseLargest(CameraCharacteristics characteristics, int format, int maxLongEdge) {
+        StreamConfigurationMap map = characteristics == null ? null : characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+        Size[] sizes = map == null ? null : map.getOutputSizes(format);
+        if (sizes == null || sizes.length == 0) return new Size(1920, 1440);
+        Size best = null;
+        int bestArea = -1;
+        for (Size size : sizes) {
+            int edge = Math.max(size.getWidth(), size.getHeight());
+            int area = size.getWidth() * size.getHeight();
+            if (edge <= maxLongEdge && area > bestArea) {
+                best = size;
+                bestArea = area;
+            }
+        }
+        return best != null ? best : choose(characteristics, format, maxLongEdge);
+    }
+
     static int jpegOrientation(CameraCharacteristics characteristics, int displayRotation) {
         if (characteristics == null) return 0;
         Integer sensor = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);

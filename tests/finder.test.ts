@@ -21,7 +21,7 @@ describe("finder pace", () => {
     expect(state.edge).toBe(480);
     state = nextPreviewEdge(state.edge, 8, state.slow, state.fast);
     expect(state.edge).toBe(Math.round(480 * 1.2));
-    expect(nextPreviewEdge(960, 8, 0, 40).edge).toBe(960);
+    expect(nextPreviewEdge(1280, 8, 0, 40).edge).toBe(1280);
   });
 });
 

@@ -152,8 +152,8 @@ final class CameraSession {
 
     private void configure(CameraDevice camera, CameraCatalog.Entry target, int ticket, boolean routePhysical) {
         try {
-            Size previewSize = CameraCatalog.choose(target.characteristics, ImageFormat.YUV_420_888, 640);
-            Size stillSize = CameraCatalog.choose(target.characteristics, ImageFormat.JPEG, 1600);
+            Size previewSize = CameraCatalog.choose(target.characteristics, ImageFormat.YUV_420_888, 1280);
+            Size stillSize = CameraCatalog.chooseLargest(target.characteristics, ImageFormat.JPEG, 2560);
             previewReader = ImageReader.newInstance(previewSize.getWidth(), previewSize.getHeight(), ImageFormat.YUV_420_888, 2);
             stillReader = ImageReader.newInstance(stillSize.getWidth(), stillSize.getHeight(), ImageFormat.JPEG, 2);
             previewReader.setOnImageAvailableListener(reader -> onPreview(reader, ticket), handler);

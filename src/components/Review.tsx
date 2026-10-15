@@ -4,6 +4,7 @@ import { FILMS, getFilm } from "../data/films";
 import { downloadBuffer, formatBytes, rgbaToBlob } from "../lib/bitmap";
 import { saveShot, type Shot } from "../lib/db";
 import { applyCamera, applyFilm, floatToRgba, rawToFloat } from "../lib/develop";
+import { framedProfile } from "../lib/frame";
 import { decodeRaw } from "../lib/raw";
 import { CameraArt, FilmArt } from "./art";
 
@@ -31,7 +32,7 @@ export function Review({ shot, onClose, onUpdate, onDelete }: Props) {
     (async () => {
       const decoded = decodeRaw(new Uint8Array(shot.raw));
       const linear = rawToFloat(decoded.image);
-      const optics = applyCamera(linear, camera.profile, shot.ev);
+      const optics = applyCamera(linear, framedProfile(camera.profile, shot.portrait), shot.ev);
       const rawBlob = await rgbaToBlob(floatToRgba(linear), decoded.image.width, decoded.image.height, "image/jpeg", 0.86);
       const opticsBlob = await rgbaToBlob(floatToRgba(optics), optics.width, optics.height, "image/jpeg", 0.86);
       const rawUrl = URL.createObjectURL(rawBlob);
@@ -69,7 +70,7 @@ export function Review({ shot, onClose, onUpdate, onDelete }: Props) {
       const nextFilm = getFilm(patch.filmId ?? shot.filmId);
       const nextEv = patch.ev ?? shot.ev;
       const decoded = decodeRaw(new Uint8Array(shot.raw));
-      const optics = applyCamera(rawToFloat(decoded.image), nextCamera.profile, nextEv);
+      const optics = applyCamera(rawToFloat(decoded.image), framedProfile(nextCamera.profile, shot.portrait), nextEv);
       const rgba = applyFilm(optics, nextFilm.profile, { seed: shot.seed });
       const blob = await rgbaToBlob(rgba, optics.width, optics.height);
       const updated: Shot = {

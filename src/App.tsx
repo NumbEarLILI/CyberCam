@@ -8,6 +8,7 @@ import { copyBytes, fitSize, readSource, rgbaToBlob } from "./lib/bitmap";
 import { deleteShot, loadShots, saveShot, type Shot } from "./lib/db";
 import { applyCamera, applyFilm, rawToFloat } from "./lib/develop";
 import { createFinder } from "./lib/finder";
+import { framedProfile, frameSize, orientedAspect, sensorConstraints, SENSOR_HEIGHT, SENSOR_WIDTH, STILL_MAX_EDGE } from "./lib/frame";
 import { hardwareLensLabel, lensLabel, preferredHardwareCamera, shouldMirrorTrack, type HardwareCamera, type Lens } from "./lib/lenses";
 import { captureHardwareStill, drawHardwareFrame, listHardwareCameras, nativeCamerasSupported, onHardwareFrame, startHardwareCamera, stopHardwareCamera } from "./lib/native-cameras";
 import { encodeRaw, rgba8ToRaw } from "./lib/raw";
@@ -45,6 +46,7 @@ export function App() {
   const busy = useRef(false);
   const [frame, setFrame] = useState({ width: 0, height: 0 });
   const sensorEpoch = useRef(0);
+  const portraitRef = useRef(typeof window !== "undefined" && window.matchMedia("(orientation: portrait)").matches);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const pinch = useRef<{ distance: number; zoom: number } | null>(null);
   const backendRef = useRef(backend);
@@ -88,14 +90,19 @@ export function App() {
       const height = landscape
         ? Math.max(0, stage.clientHeight - padY)
         : Math.max(0, element.clientHeight - columnPad - dockHeight - padY);
-      const byHeight = height * camera.profile.aspect;
-      if (byHeight <= width) setFrame({ width: byHeight, height });
-      else setFrame({ width, height: width / camera.profile.aspect });
+      portraitRef.current = window.matchMedia("(orientation: portrait)").matches;
+      const aspect = orientedAspect(camera.profile.aspect, portraitRef.current);
+      setFrame(frameSize(width, height, aspect));
     };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(element);
-    return () => observer.disconnect();
+    const media = window.matchMedia("(orientation: portrait)");
+    media.addEventListener("change", measure);
+    return () => {
+      observer.disconnect();
+      media.removeEventListener("change", measure);
+    };
   }, [camera.profile.aspect, view]);
 
   useEffect(() => {
@@ -200,9 +207,7 @@ export function App() {
     if (backend !== "web" || source !== "live") return;
     let stream: MediaStream | null = null;
     let cancelled = false;
-    const video: MediaTrackConstraints = deviceId
-      ? { deviceId: { exact: deviceId } }
-      : { facingMode: { ideal: "environment" } };
+    const video = sensorConstraints(deviceId);
     if (!navigator.mediaDevices?.getUserMedia) {
       setCameraError(true);
       setMessage("没有打开摄像头。可以导入一张照片。");
@@ -223,7 +228,7 @@ export function App() {
         const track = next.getVideoTracks()[0];
         if (track) {
           try {
-            await track.applyConstraints({ width: { ideal: 1920 }, height: { ideal: 1080 } });
+            await track.applyConstraints({ width: { ideal: SENSOR_WIDTH }, height: { ideal: SENSOR_HEIGHT } });
           } catch {
             // Keep this camera even when it cannot take the preferred size.
           }
@@ -336,7 +341,7 @@ export function App() {
         // The latest preview frame is already on the sensor canvas.
       }
     }
-    const image = grab(1400);
+    const image = grab(STILL_MAX_EDGE);
     if (!image) {
       busy.current = false;
       setMessage("画面还没准备好。");
@@ -356,7 +361,7 @@ export function App() {
       await sleep(420);
       setPhase("optics");
       await paint();
-      const optics = applyCamera(rawToFloat(rawImage), body.profile, ev);
+      const optics = applyCamera(rawToFloat(rawImage), framedProfile(body.profile, portraitRef.current), ev);
       await sleep(420);
       setPhase("film");
       await paint();
@@ -369,6 +374,7 @@ export function App() {
         cameraId,
         filmId,
         ev,
+        portrait: portraitRef.current,
         seed,
         raw: copyBytes(rawBytes),
         jpeg: await jpeg.arrayBuffer(),
@@ -411,7 +417,7 @@ export function App() {
     const img = await loadImage(file);
     const canvas = sensorRef.current;
     if (!canvas) return;
-    const size = fitSize(img.naturalWidth, img.naturalHeight, 1600);
+    const size = fitSize(img.naturalWidth, img.naturalHeight, STILL_MAX_EDGE);
     canvas.width = size.width;
     canvas.height = size.height;
     canvas.getContext("2d")?.drawImage(img, 0, 0, size.width, size.height);

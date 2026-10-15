@@ -346,6 +346,13 @@ em { font-style: normal; color: var(--muted); }
   .chip strong { max-width: 11em; }
 }
 
+@media (orientation: portrait) {
+  .top { min-height: 52px; padding-top: 8px; }
+  .stage { width: 100%; padding: 4px 6px 0; }
+  .dock { padding-top: 8px; }
+  .frame { border-radius: 16px; }
+}
+
 @media (orientation: landscape) and (max-height: 520px) {
   .camera-shell.hidden { display: none; }
   .top {

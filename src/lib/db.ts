@@ -4,6 +4,8 @@ export type Shot = {
   cameraId: string;
   filmId: string;
   ev: number;
+  /** The phone was portrait when the shutter closed, so the film gate is upright. */
+  portrait?: boolean;
   seed: number;
   raw: ArrayBuffer;
   jpeg: ArrayBuffer;

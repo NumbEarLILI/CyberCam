@@ -163,7 +163,7 @@ void main() {
   oColor = vec4(linearToSrgb(vec3(nr, ng, nb)), 1.0);
 }`;
 
-const PREVIEW_MAX = 960;
+const PREVIEW_MAX = 1280;
 const PREVIEW_MIN = 320;
 
 export function nextPreviewEdge(edge: number, elapsedMs: number, slow: number, fast: number) {
