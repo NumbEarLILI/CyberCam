@@ -5,14 +5,15 @@ import { Review } from "./components/Review";
 import { Sheets } from "./components/Sheets";
 import { getCamera } from "./data/cameras";
 import { getFilm } from "./data/films";
-import { copyBytes, fitSize, readSource, rgbaToBlob } from "./lib/bitmap";
+import { copyBytes, fitSize, readSource, rgbaToBlob, rotateRgba } from "./lib/bitmap";
 import { deleteShot, loadShots, saveShot, type Shot } from "./lib/db";
 import { applyCamera, applyFilm, rawToFloat } from "./lib/develop";
 import { BASE_APERTURE, BASE_SHUTTER, exposureStops, isoGrainScale, stepAperture, stepIso, stepShutter } from "./lib/exposure";
 import { createFinder } from "./lib/finder";
 import { framedProfile, frameSize, orientedAspect, sensorConstraints, SENSOR_HEIGHT, SENSOR_WIDTH, STILL_MAX_EDGE } from "./lib/frame";
+import { holdFromOrientation, holdFromTilt, stillQuarter, visibleHold, type Hold } from "./lib/hold";
 import { hardwareLensLabel, lensLabel, preferredHardwareCamera, shouldMirrorTrack, type HardwareCamera, type Lens } from "./lib/lenses";
-import { captureHardwareStill, drawHardwareFrame, listHardwareCameras, nativeCamerasSupported, onHardwareFrame, startHardwareCamera, stopHardwareCamera } from "./lib/native-cameras";
+import { captureHardwareStill, drawHardwareFrame, listHardwareCameras, nativeCamerasSupported, onHardwareFrame, onHardwareOrientation, startHardwareCamera, stopHardwareCamera } from "./lib/native-cameras";
 import { streamNeedsRestart } from "./lib/preview-session";
 import { encodeRaw, rgba8ToRaw } from "./lib/raw";
 import { clampZoom, formatZoom, stepZoom } from "./lib/zoom";
@@ -44,6 +45,10 @@ export function App() {
   const [flash, setFlash] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [previewEpoch, setPreviewEpoch] = useState(0);
+  const [hold, setHold] = useState<Hold>("portrait");
+  const [viewportPortrait, setViewportPortrait] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(orientation: portrait)").matches,
+  );
   const stageRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -59,6 +64,9 @@ export function App() {
   const backendRef = useRef(backend);
   const sourceRef = useRef(source);
   const resumeAt = useRef(0);
+  const shownHold = visibleHold(hold, viewportPortrait);
+  const holdRef = useRef(shownHold);
+  holdRef.current = shownHold;
   const reopenPreview = () => {
     const now = Date.now();
     if (now - resumeAt.current < 1000) return;
@@ -95,7 +103,6 @@ export function App() {
       const stage = element.querySelector(".stage");
       const dock = element.querySelector(".dock");
       if (!stage) return;
-      const landscape = window.matchMedia("(orientation: landscape) and (max-height: 520px)").matches;
       const stageStyle = getComputedStyle(stage);
       const padX = Number.parseFloat(stageStyle.paddingLeft) + Number.parseFloat(stageStyle.paddingRight);
       const padY = Number.parseFloat(stageStyle.paddingTop) + Number.parseFloat(stageStyle.paddingBottom);
@@ -103,10 +110,10 @@ export function App() {
       const columnStyle = getComputedStyle(element);
       const columnPad = Number.parseFloat(columnStyle.paddingTop) + Number.parseFloat(columnStyle.paddingBottom);
       const dockHeight = dock instanceof HTMLElement ? dock.offsetHeight : 0;
-      const height = landscape
-        ? Math.max(0, stage.clientHeight - padY)
-        : Math.max(0, element.clientHeight - columnPad - dockHeight - padY);
-      portraitRef.current = window.matchMedia("(orientation: portrait)").matches;
+      const height = Math.max(0, element.clientHeight - columnPad - dockHeight - padY);
+      const portrait = window.matchMedia("(orientation: portrait)").matches;
+      portraitRef.current = portrait;
+      setViewportPortrait(portrait);
       const aspect = orientedAspect(camera.profile.aspect, portraitRef.current);
       setFrame(frameSize(width, height, aspect));
     };
@@ -120,6 +127,30 @@ export function App() {
       media.removeEventListener("change", measure);
     };
   }, [camera.profile.aspect, view]);
+
+  useEffect(() => {
+    if (nativeCamerasSupported()) {
+      let remove = () => {};
+      let cancelled = false;
+      void onHardwareOrientation((degrees) => {
+        if (!cancelled) setHold(holdFromOrientation(degrees));
+      }).then((handle) => {
+        remove = () => {
+          void handle.remove();
+        };
+      });
+      return () => {
+        cancelled = true;
+        remove();
+      };
+    }
+    const onTilt = (event: DeviceOrientationEvent) => {
+      const next = holdFromTilt(event.beta, event.gamma);
+      if (next) setHold(next);
+    };
+    window.addEventListener("deviceorientation", onTilt);
+    return () => window.removeEventListener("deviceorientation", onTilt);
+  }, []);
 
   useEffect(() => {
     setZoom(1);
@@ -442,7 +473,9 @@ export function App() {
       await paint();
       const started = performance.now();
       const rgba = applyFilm(optics, stock.profile, { seed, grainScale: isoGrainScale(iso, stock.iso) });
-      const jpeg = await rgbaToBlob(rgba, optics.width, optics.height);
+      const turn = stillQuarter(holdRef.current);
+      const upright = rotateRgba(rgba, optics.width, optics.height, turn);
+      const jpeg = await rgbaToBlob(upright.data, upright.width, upright.height);
       const shot: Shot = {
         id: crypto.randomUUID(),
         createdAt: new Date().toISOString(),
@@ -453,6 +486,7 @@ export function App() {
         shutter,
         aperture,
         portrait: portraitRef.current,
+        turn,
         seed,
         raw: copyBytes(rawBytes),
         jpeg: await jpeg.arrayBuffer(),
@@ -546,7 +580,7 @@ export function App() {
   }
 
   return (
-    <div className="app">
+    <div className="app" data-hold={shownHold}>
       <div className={view === "camera" ? "camera-shell" : "camera-shell hidden"}>
           <header className="top">
             <div className="top-side">

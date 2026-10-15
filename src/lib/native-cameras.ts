@@ -7,6 +7,7 @@ type DeviceCamerasPlugin = {
   stop(): Promise<void>;
   capture(): Promise<{ jpeg: string }>;
   addListener(eventName: "frame", listener: (event: { jpeg: string }) => void): Promise<PluginListenerHandle>;
+  addListener(eventName: "orientation", listener: (event: { orientation: number }) => void): Promise<PluginListenerHandle>;
 };
 
 const DeviceCameras = registerPlugin<DeviceCamerasPlugin>("DeviceCameras");
@@ -35,6 +36,12 @@ export function captureHardwareStill() {
 export function onHardwareFrame(listener: (jpeg: string) => void) {
   return DeviceCameras.addListener("frame", (event) => {
     if (event.jpeg) listener(event.jpeg);
+  });
+}
+
+export function onHardwareOrientation(listener: (orientation: number) => void) {
+  return DeviceCameras.addListener("orientation", (event) => {
+    if (Number.isFinite(event.orientation)) listener(event.orientation);
   });
 }
 

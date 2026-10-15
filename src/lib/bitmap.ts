@@ -33,6 +33,38 @@ export function readSource(
   return ctx.getImageData(0, 0, size.width, size.height);
 }
 
+/** Clockwise quarter-turns. Quarter 0 returns the same buffer. */
+export function rotateRgba(rgba: Uint8ClampedArray, width: number, height: number, quarters: number) {
+  const turns = ((quarters % 4) + 4) % 4;
+  if (turns === 0) return { data: rgba, width, height };
+  const nextWidth = turns % 2 === 0 ? width : height;
+  const nextHeight = turns % 2 === 0 ? height : width;
+  const out = new Uint8ClampedArray(nextWidth * nextHeight * 4);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      let nx = x;
+      let ny = y;
+      if (turns === 1) {
+        nx = height - 1 - y;
+        ny = x;
+      } else if (turns === 2) {
+        nx = width - 1 - x;
+        ny = height - 1 - y;
+      } else {
+        nx = y;
+        ny = width - 1 - x;
+      }
+      const from = (y * width + x) * 4;
+      const to = (ny * nextWidth + nx) * 4;
+      out[to] = rgba[from];
+      out[to + 1] = rgba[from + 1];
+      out[to + 2] = rgba[from + 2];
+      out[to + 3] = rgba[from + 3];
+    }
+  }
+  return { data: out, width: nextWidth, height: nextHeight };
+}
+
 export function toImageData(rgba: Uint8ClampedArray, width: number, height: number) {
   const buffer = new ArrayBuffer(rgba.byteLength);
   new Uint8ClampedArray(buffer).set(rgba);

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { CAMERAS, getCamera } from "../data/cameras";
 import { FILMS, getFilm } from "../data/films";
-import { downloadBuffer, formatBytes, rgbaToBlob } from "../lib/bitmap";
+import { downloadBuffer, formatBytes, rgbaToBlob, rotateRgba } from "../lib/bitmap";
 import { saveShot, type Shot } from "../lib/db";
 import { applyCamera, applyFilm, floatToRgba, rawToFloat } from "../lib/develop";
 import { ExposureDials } from "./Dials";
@@ -35,8 +35,11 @@ export function Review({ shot, onClose, onUpdate, onDelete }: Props) {
       const decoded = decodeRaw(new Uint8Array(shot.raw));
       const linear = rawToFloat(decoded.image);
       const optics = applyCamera(linear, framedProfile(camera.profile, shot.portrait), recipeEv(shot.ev, film.iso, shot));
-      const rawBlob = await rgbaToBlob(floatToRgba(linear), decoded.image.width, decoded.image.height, "image/jpeg", 0.86);
-      const opticsBlob = await rgbaToBlob(floatToRgba(optics), optics.width, optics.height, "image/jpeg", 0.86);
+      const turn = shot.turn ?? 0;
+      const rawTurned = rotateRgba(floatToRgba(linear), decoded.image.width, decoded.image.height, turn);
+      const opticsTurned = rotateRgba(floatToRgba(optics), optics.width, optics.height, turn);
+      const rawBlob = await rgbaToBlob(rawTurned.data, rawTurned.width, rawTurned.height, "image/jpeg", 0.86);
+      const opticsBlob = await rgbaToBlob(opticsTurned.data, opticsTurned.width, opticsTurned.height, "image/jpeg", 0.86);
       const rawUrl = URL.createObjectURL(rawBlob);
       const opticsUrl = URL.createObjectURL(opticsBlob);
       const filmUrl = URL.createObjectURL(new Blob([shot.jpeg], { type: "image/jpeg" }));
@@ -81,7 +84,8 @@ export function Review({ shot, onClose, onUpdate, onDelete }: Props) {
         seed: shot.seed,
         grainScale: next.iso == null ? 1 : isoGrainScale(next.iso, nextFilm.iso),
       });
-      const blob = await rgbaToBlob(rgba, optics.width, optics.height);
+      const turned = rotateRgba(rgba, optics.width, optics.height, shot.turn ?? 0);
+      const blob = await rgbaToBlob(turned.data, turned.width, turned.height);
       const updated: Shot = {
         ...next,
         jpeg: await blob.arrayBuffer(),

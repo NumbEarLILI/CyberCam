@@ -413,37 +413,52 @@ em { font-style: normal; color: var(--muted); }
   .frame { border-radius: 16px; }
 }
 
-@media (orientation: landscape) and (max-height: 520px) {
-  .camera-shell.hidden { display: none; }
-  .top {
-    width: 100%;
-    min-height: 52px;
-    padding: 8px 12px 0;
-  }
-  .finder-column {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-rows: minmax(0, 1fr);
-    align-items: stretch;
-  }
-  .stage {
-    width: 100%;
-    height: 100%;
-    min-height: 0;
-    margin: 0;
-    place-items: center;
-    padding: 8px 8px 8px 12px;
-  }
-  .dock {
-    width: auto;
-    margin: 0;
-    padding: 8px 12px 8px 4px;
-  }
-  .ghost { min-height: 40px; padding: 8px 12px; }
-  .shutter { width: 64px; height: 64px; box-shadow: 0 0 0 6px rgba(244, 240, 231, 0.14), 0 8px 20px rgba(0,0,0,0.35); }
-  .hud { top: 8px; left: 8px; right: 8px; }
-  .zoom-bar { bottom: 8px; }
+/* Same chrome in every orientation. Only the setting text turns with the phone. */
+.app[data-hold="left"] .hud,
+.app[data-hold="right"] .hud { align-items: flex-start; }
+.app[data-hold="left"] .hud .chip,
+.app[data-hold="left"] .meter .chip {
+  writing-mode: vertical-rl;
+  text-orientation: sideways;
 }
+.app[data-hold="right"] .hud .chip,
+.app[data-hold="right"] .meter .chip { writing-mode: sideways-lr; }
+.app[data-hold="left"] .frame .meter,
+.app[data-hold="right"] .frame .meter {
+  left: 50%;
+  right: auto;
+  width: max-content;
+  max-width: calc(100% - 20px);
+  transform: translateX(-50%);
+}
+.app[data-hold="left"] .meter .chip,
+.app[data-hold="right"] .meter .chip { flex: 0 0 auto; }
+.app[data-hold="left"] .chip strong,
+.app[data-hold="right"] .chip strong {
+  max-width: none;
+  max-height: none;
+  overflow: visible;
+}
+.app[data-hold="left"] .ev-chip span,
+.app[data-hold="right"] .ev-chip span,
+.app[data-hold="left"] .zoom-bar span,
+.app[data-hold="right"] .zoom-bar span,
+.app[data-hold="left"] .meter .ev-chip .dial-value,
+.app[data-hold="right"] .meter .ev-chip .dial-value {
+  min-width: 0;
+  min-height: 1.2em;
+}
+.app[data-hold="left"] .zoom-bar span {
+  writing-mode: vertical-rl;
+  text-orientation: sideways;
+}
+.app[data-hold="right"] .zoom-bar span { writing-mode: sideways-lr; }
+.app[data-hold="left"] .zoom-bar button { transform: rotate(-90deg); }
+.app[data-hold="right"] .zoom-bar button { transform: rotate(90deg); }
+.app[data-hold="upside"] .hud .chip,
+.app[data-hold="upside"] .meter .chip,
+.app[data-hold="upside"] .zoom-bar button,
+.app[data-hold="upside"] .zoom-bar span { transform: rotate(180deg); }
 
 @media (prefers-reduced-motion: reduce) {
   .flash { animation: none; opacity: 0; }

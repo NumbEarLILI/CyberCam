@@ -6,6 +6,7 @@ import android.hardware.camera2.CameraManager;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Base64;
+import android.view.OrientationEventListener;
 import android.view.Surface;
 import android.view.WindowManager;
 import com.getcapacitor.JSArray;
@@ -34,6 +35,27 @@ public class DeviceCamerasPlugin extends Plugin {
     private int openGeneration;
     private boolean resumed = true;
     private final Handler main = new Handler(Looper.getMainLooper());
+    private OrientationEventListener orientationListener;
+    private int lastOrientation = -1;
+
+    @Override
+    public void load() {
+        Context context = getContext();
+        if (context == null) return;
+        orientationListener = new OrientationEventListener(context) {
+            @Override
+            public void onOrientationChanged(int orientation) {
+                if (orientation == ORIENTATION_UNKNOWN) return;
+                int snapped = (orientation + 45) / 90 * 90 % 360;
+                if (snapped == lastOrientation) return;
+                lastOrientation = snapped;
+                JSObject payload = new JSObject();
+                payload.put("orientation", snapped);
+                notifyListeners("orientation", payload);
+            }
+        };
+        if (orientationListener.canDetectOrientation()) orientationListener.enable();
+    }
 
     @PluginMethod
     public void list(PluginCall call) {
@@ -224,6 +246,7 @@ public class DeviceCamerasPlugin extends Plugin {
 
     @Override
     protected void handleOnDestroy() {
+        if (orientationListener != null) orientationListener.disable();
         if (session != null) session.release();
         session = null;
         super.handleOnDestroy();

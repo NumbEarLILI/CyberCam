@@ -12,6 +12,8 @@ export type Shot = {
   aperture?: number;
   /** The phone was portrait when the shutter closed, so the film gate is upright. */
   portrait?: boolean;
+  /** Clockwise quarter-turns applied so a sideways hold is upright in the file. */
+  turn?: number;
   seed: number;
   raw: ArrayBuffer;
   jpeg: ArrayBuffer;
