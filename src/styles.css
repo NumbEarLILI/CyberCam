@@ -333,15 +333,24 @@ em { font-style: normal; color: var(--muted); }
   width: min(920px, 100%);
   margin: 0 auto;
   min-height: 240px;
-  max-height: 52dvh;
+  max-height: min(68dvh, 820px);
+  flex-shrink: 0;
   background: #070707;
   border-radius: 20px;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   position: relative;
   overflow: hidden;
 }
-.review-frame img { max-width: 100%; max-height: 52dvh; display: block; }
+.review-frame img {
+  max-width: 100%;
+  max-height: min(68dvh, 820px);
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  display: block;
+}
 .review-frame.working img { filter: saturate(0.7); }
 .waiting, .veil { color: var(--muted); padding: 24px; }
 .veil { position: absolute; inset: auto 12px 12px auto; background: rgba(0,0,0,0.6); border-radius: 999px; padding: 8px 12px; }
