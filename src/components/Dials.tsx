@@ -61,7 +61,7 @@ function Dial({
       <button type="button" aria-label={decrease} disabled={dark} onClick={() => onStep(-1)}>
         −
       </button>
-      <span>{value}</span>
+      <span className="dial-value">{value}</span>
       <button type="button" aria-label={increase} disabled={bright} onClick={() => onStep(1)}>
         +
       </button>

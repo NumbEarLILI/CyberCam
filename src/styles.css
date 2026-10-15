@@ -187,21 +187,56 @@ em { font-style: normal; color: var(--muted); }
 }
 .meter {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 6px;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  width: max-content;
+  max-width: 100%;
+  margin: 0 auto;
+  gap: 0;
+  padding: 0 2px;
+  border-radius: 999px;
+  background: rgba(12, 12, 11, 0.62);
+  border: 1px solid rgba(244, 240, 231, 0.18);
+  backdrop-filter: blur(12px);
 }
 .frame .meter {
   position: absolute;
   z-index: 5;
-  left: 8px;
-  right: 8px;
+  left: 10px;
+  right: 10px;
   bottom: 58px;
+  width: auto;
   pointer-events: none;
 }
-.meter .chip { pointer-events: auto; }
-.meter .ev-chip span { min-width: 52px; }
-.meter .meta { padding-left: 8px; }
+.meter .chip {
+  pointer-events: auto;
+  flex: 1 1 0;
+  justify-content: center;
+  min-width: 0;
+  min-height: 0;
+  gap: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  backdrop-filter: none;
+}
+.meter .chip + .chip { box-shadow: inset 1px 0 0 rgba(244, 240, 231, 0.16); }
+.meter .meta {
+  padding-left: 4px;
+  font-size: 9px;
+  letter-spacing: 0.02em;
+}
+.meter .ev-chip button {
+  width: 28px;
+  height: 32px;
+}
+.meter .ev-chip .dial-value {
+  min-width: 3.5em;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 1;
+}
 .dock {
   position: relative;
   z-index: 2;
