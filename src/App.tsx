@@ -8,7 +8,8 @@ import { copyBytes, fitSize, readSource, rgbaToBlob } from "./lib/bitmap";
 import { deleteShot, loadShots, saveShot, type Shot } from "./lib/db";
 import { applyCamera, applyFilm, rawToFloat } from "./lib/develop";
 import { createFinder } from "./lib/finder";
-import { lensLabel, shouldMirrorTrack, type Lens } from "./lib/lenses";
+import { hardwareLensLabel, lensLabel, preferredHardwareCamera, shouldMirrorTrack, type HardwareCamera, type Lens } from "./lib/lenses";
+import { captureHardwareStill, drawHardwareFrame, listHardwareCameras, nativeCamerasSupported, onHardwareFrame, startHardwareCamera, stopHardwareCamera } from "./lib/native-cameras";
 import { encodeRaw, rgba8ToRaw } from "./lib/raw";
 import { clampZoom, formatZoom, stepZoom } from "./lib/zoom";
 
@@ -24,6 +25,7 @@ export function App() {
   const [mirror, setMirror] = useState(false);
   const [picker, setPicker] = useState<Picker>(null);
   const [deviceId, setDeviceId] = useState<string | null>(null);
+  const [backend, setBackend] = useState<"pending" | "web" | "native">(() => (nativeCamerasSupported() ? "pending" : "web"));
   const [lenses, setLenses] = useState<Lens[]>([]);
   const [activeDeviceId, setActiveDeviceId] = useState<string | null>(null);
   const [cameraError, setCameraError] = useState(false);
@@ -45,6 +47,9 @@ export function App() {
   const sensorEpoch = useRef(0);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const pinch = useRef<{ distance: number; zoom: number } | null>(null);
+  const backendRef = useRef(backend);
+  const hardwareRef = useRef<HardwareCamera[]>([]);
+  backendRef.current = backend;
   const finderState = useRef({
     source,
     cameraId,
@@ -53,8 +58,9 @@ export function App() {
     mirror,
     zoom,
     frame,
+    backend,
   });
-  finderState.current = { source, cameraId, filmId, ev, mirror, zoom, frame };
+  finderState.current = { source, cameraId, filmId, ev, mirror, zoom, frame, backend };
 
   const camera = getCamera(cameraId);
   const film = getFilm(filmId);
@@ -107,8 +113,37 @@ export function App() {
     return () => frame.removeEventListener("wheel", onWheel);
   }, [view]);
 
+  useEffect(() => {
+    if (!nativeCamerasSupported()) return;
+    let cancelled = false;
+    listHardwareCameras()
+      .then((cameras) => {
+        if (cancelled) return;
+        if (cameras.length === 0) {
+          setBackend("web");
+          return;
+        }
+        hardwareRef.current = cameras;
+        setLenses(cameras.map((camera) => ({ deviceId: camera.id, label: hardwareLensLabel(camera, cameras) })));
+        const preferred = preferredHardwareCamera(cameras);
+        setBackend("native");
+        if (preferred) {
+          setDeviceId(preferred);
+          setActiveDeviceId(preferred);
+          setMirror(cameras.find((camera) => camera.id === preferred)?.facing === "front");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setBackend("web");
+      });
+    return () => {
+      cancelled = true;
+      void stopHardwareCamera();
+    };
+  }, []);
+
   const refreshLenses = useCallback(async () => {
-    if (!navigator.mediaDevices?.enumerateDevices) return;
+    if (backendRef.current !== "web" || !navigator.mediaDevices?.enumerateDevices) return;
     const listed = await navigator.mediaDevices.enumerateDevices();
     const videos = listed.filter((item) => item.kind === "videoinput" && item.deviceId);
     setLenses(videos.map((item, index) => ({ deviceId: item.deviceId, label: lensLabel(item.label, index) })));
@@ -124,12 +159,50 @@ export function App() {
   }, [refreshLenses]);
 
   useEffect(() => {
-    if (source !== "live") return;
+    if (backend !== "native" || source !== "live" || !deviceId) return;
+    const camera = hardwareRef.current.find((item) => item.id === deviceId);
+    setMirror(camera?.facing === "front");
+    setActiveDeviceId(deviceId);
+    setCameraError(false);
+    let remove = () => {};
+    let cancelled = false;
+    startHardwareCamera(deviceId)
+      .then(async () => {
+        if (cancelled) {
+          await stopHardwareCamera();
+          return;
+        }
+        const handle = await onHardwareFrame((jpeg) => {
+          if (cancelled || busy.current) return;
+          void drawHardwareFrame(sensorRef.current, jpeg);
+        });
+        if (cancelled) {
+          await handle.remove();
+          return;
+        }
+        remove = () => {
+          void handle.remove();
+        };
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setCameraError(true);
+        setMessage("这个摄像头打不开。可以换一个，或导入一张照片。");
+      });
+    return () => {
+      cancelled = true;
+      remove();
+      void stopHardwareCamera();
+    };
+  }, [backend, deviceId, source]);
+
+  useEffect(() => {
+    if (backend !== "web" || source !== "live") return;
     let stream: MediaStream | null = null;
     let cancelled = false;
     const video: MediaTrackConstraints = deviceId
-      ? { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }
-      : { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } };
+      ? { deviceId: { exact: deviceId } }
+      : { facingMode: { ideal: "environment" } };
     if (!navigator.mediaDevices?.getUserMedia) {
       setCameraError(true);
       setMessage("没有打开摄像头。可以导入一张照片。");
@@ -148,6 +221,13 @@ export function App() {
         element.srcObject = next;
         await element.play();
         const track = next.getVideoTracks()[0];
+        if (track) {
+          try {
+            await track.applyConstraints({ width: { ideal: 1920 }, height: { ideal: 1080 } });
+          } catch {
+            // Keep this camera even when it cannot take the preferred size.
+          }
+        }
         const settings = track?.getSettings();
         setActiveDeviceId(settings?.deviceId ?? deviceId);
         setMirror(shouldMirrorTrack(settings?.facingMode, track?.label ?? ""));
@@ -165,20 +245,20 @@ export function App() {
       const element = videoRef.current;
       if (element) element.srcObject = null;
     };
-  }, [deviceId, refreshLenses, source]);
+  }, [backend, deviceId, refreshLenses, source]);
 
   const grab = useCallback(
     (maxEdge: number) => {
-      if (source === "live") {
+      if (source === "live" && backend !== "native") {
         const video = videoRef.current;
         if (!video || video.videoWidth === 0) return null;
         return readSource(video, video.videoWidth, video.videoHeight, mirror, maxEdge, zoom);
       }
       const sensor = sensorRef.current;
       if (!sensor || sensor.width === 0) return null;
-      return readSource(sensor, sensor.width, sensor.height, false, maxEdge, zoom);
+      return readSource(sensor, sensor.width, sensor.height, source === "live" && mirror, maxEdge, zoom);
     },
-    [mirror, source, zoom],
+    [backend, mirror, source, zoom],
   );
 
   useEffect(() => {
@@ -209,7 +289,12 @@ export function App() {
           mirror: live && state.mirror,
         };
         let drew = false;
-        if (live) {
+        if (live && state.backend === "native") {
+          const sensor = sensorRef.current;
+          if (sensor && sensor.width > 1 && sensor.height > 1) {
+            drew = finder.draw(sensor, sensor.width, sensor.height, bufferW, bufferH, grade, state.zoom);
+          }
+        } else if (live) {
           const video = videoRef.current;
           if (video && video.readyState >= 2 && video.videoWidth > 0) {
             drew = finder.draw(video, video.videoWidth, video.videoHeight, bufferW, bufferH, grade, state.zoom);
@@ -242,12 +327,21 @@ export function App() {
 
   const shoot = useCallback(async () => {
     if (busy.current || view !== "camera" || picker) return;
+    busy.current = true;
+    if (backend === "native" && source === "live") {
+      try {
+        const jpeg = await captureHardwareStill();
+        await drawHardwareFrame(sensorRef.current, jpeg);
+      } catch {
+        // The latest preview frame is already on the sensor canvas.
+      }
+    }
     const image = grab(1400);
     if (!image) {
+      busy.current = false;
       setMessage("画面还没准备好。");
       return;
     }
-    busy.current = true;
     setFlash(true);
     window.setTimeout(() => setFlash(false), 180);
     navigator.vibrate?.(12);
@@ -295,7 +389,7 @@ export function App() {
       setPhase(null);
       busy.current = false;
     }
-  }, [cameraId, ev, filmId, grab, picker, view]);
+  }, [backend, cameraId, ev, filmId, grab, picker, source, view]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {

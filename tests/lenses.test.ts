@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lensLabel, shouldMirrorTrack } from "../src/lib/lenses";
+import { hardwareLensLabel, lensLabel, preferredHardwareCamera, shouldMirrorTrack, type HardwareCamera } from "../src/lib/lenses";
 
 describe("camera devices", () => {
   it("names unlabeled cameras by their order", () => {
@@ -17,6 +17,33 @@ describe("camera devices", () => {
   it("keeps a specific camera name", () => {
     expect(lensLabel("USB Capture", 0)).toBe("USB Capture");
     expect(lensLabel("FaceTime HD Camera", 0)).toBe("前置 · FaceTime HD Camera");
+  });
+
+  it("names each rear sensor when the phone hides them behind one camera", () => {
+    const cameras: HardwareCamera[] = [
+      { id: "0", facing: "back", equivalent: 24, physical: false },
+      { id: "2", facing: "back", equivalent: 13, physical: true },
+      { id: "3", facing: "back", equivalent: 24, physical: true },
+      { id: "4", facing: "back", equivalent: 70, physical: true },
+      { id: "1", facing: "front", equivalent: 24, physical: false },
+    ];
+    expect(hardwareLensLabel(cameras[0], cameras)).toBe("后置 · 自动");
+    expect(hardwareLensLabel(cameras[1], cameras)).toBe("后置 · 超广角 13mm");
+    expect(hardwareLensLabel(cameras[2], cameras)).toBe("后置 · 主摄 24mm");
+    expect(hardwareLensLabel(cameras[3], cameras)).toBe("后置 · 长焦 70mm");
+    expect(hardwareLensLabel(cameras[4], cameras)).toBe("前置摄像头");
+    expect(preferredHardwareCamera(cameras)).toBe("0");
+  });
+
+  it("keeps unlabeled rear sensors distinct", () => {
+    const cameras: HardwareCamera[] = [
+      { id: "0", facing: "back", equivalent: 0, physical: false },
+      { id: "2", facing: "back", equivalent: 0, physical: true },
+      { id: "3", facing: "back", equivalent: 0, physical: true },
+    ];
+    expect(hardwareLensLabel(cameras[1], cameras)).toBe("后置镜头 1");
+    expect(hardwareLensLabel(cameras[2], cameras)).toBe("后置镜头 2");
+    expect(hardwareLensLabel(cameras[0], cameras)).toBe("后置 · 自动");
   });
 
   it("mirrors only the front camera", () => {
