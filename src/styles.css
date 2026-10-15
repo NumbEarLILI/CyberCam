@@ -77,7 +77,16 @@ em { font-style: normal; color: var(--muted); }
   justify-content: center;
   width: 100%;
 }
-.stage { width: min(880px, 100%); margin: 0 auto; display: grid; place-items: center; padding: 8px 24px 0; }
+.stage {
+  width: min(880px, 100%);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 24px 0;
+  min-height: 0;
+}
 .frame {
   position: relative;
   border-radius: 22px;
@@ -205,34 +214,33 @@ em { font-style: normal; color: var(--muted); }
     0 10px 22px rgba(0, 0, 0, 0.2);
   backdrop-filter: blur(16px);
 }
-.frame .meter {
-  position: absolute;
-  z-index: 5;
-  left: 10px;
-  right: 10px;
-  bottom: 58px;
-  width: auto;
+.exposure-bar {
+  flex: none;
+  width: 100%;
+  padding: 10px 0 0;
+}
+.exposure-bar .meter {
+  width: 100%;
   pointer-events: none;
 }
-.frame .dial-window { height: 28px; }
-.frame .dial-window::before {
+.exposure-bar .dial-window { height: 36px; }
+.exposure-bar .dial-window::before {
   background: linear-gradient(
     90deg,
     #100f0d 0%,
-    rgba(16, 15, 13, 0.96) 14%,
-    rgba(16, 15, 13, 0.62) 26%,
-    transparent 38%,
-    transparent 62%,
-    rgba(16, 15, 13, 0.62) 74%,
-    rgba(16, 15, 13, 0.96) 86%,
+    rgba(16, 15, 13, 0.98) 16%,
+    rgba(16, 15, 13, 0.82) 28%,
+    transparent 40%,
+    transparent 60%,
+    rgba(16, 15, 13, 0.82) 72%,
+    rgba(16, 15, 13, 0.98) 84%,
     #100f0d 100%
   );
 }
-.frame .dial-window::after { width: 54px; }
-.frame .dial-tape span::after { display: none; }
-.frame .dial-tape .is-prev,
-.frame .dial-tape .is-next { color: rgba(203, 191, 168, 0.34); }
-.frame .dial-tape .is-current { font-size: 14px; }
+.exposure-bar .dial-tape span::after { display: none; }
+.exposure-bar .dial-tape .is-current::after { display: block; }
+.exposure-bar .dial-window::after { width: 64px; }
+.exposure-bar .dial-tape .is-current { font-size: 16px; }
 .meter .chip {
   pointer-events: auto;
   flex: 1 1 0;
@@ -576,36 +584,33 @@ em { font-style: normal; color: var(--muted); }
 .app[data-hold="left"] .hud,
 .app[data-hold="right"] .hud { align-items: flex-start; }
 .app[data-hold="left"] .hud .chip,
-.app[data-hold="left"] .frame .meter .chip { writing-mode: sideways-lr; }
+.app[data-hold="left"] .exposure-bar .meter .chip { writing-mode: sideways-lr; }
 .app[data-hold="right"] .hud .chip,
-.app[data-hold="right"] .frame .meter .chip {
+.app[data-hold="right"] .exposure-bar .meter .chip {
   writing-mode: vertical-rl;
   text-orientation: sideways;
 }
-.app[data-hold="left"] .frame .meter,
-.app[data-hold="right"] .frame .meter {
-  left: 50%;
-  right: auto;
+.app[data-hold="left"] .exposure-bar .meter,
+.app[data-hold="right"] .exposure-bar .meter {
   width: max-content;
-  max-width: calc(100% - 20px);
-  transform: translateX(-50%);
+  max-width: 100%;
 }
-.app[data-hold="left"] .frame .meter .chip,
-.app[data-hold="right"] .frame .meter .chip { flex: 0 0 auto; }
-.app[data-hold="left"] .frame .dial,
-.app[data-hold="right"] .frame .dial {
+.app[data-hold="left"] .exposure-bar .meter .chip,
+.app[data-hold="right"] .exposure-bar .meter .chip { flex: 0 0 auto; }
+.app[data-hold="left"] .exposure-bar .dial,
+.app[data-hold="right"] .exposure-bar .dial {
   width: 58px;
   min-height: 112px;
 }
-.app[data-hold="left"] .frame .dial-window,
-.app[data-hold="right"] .frame .dial-window {
+.app[data-hold="left"] .exposure-bar .dial-window,
+.app[data-hold="right"] .exposure-bar .dial-window {
   height: 84px;
   background:
     repeating-linear-gradient(180deg, rgba(255, 244, 220, 0.05) 0 1px, transparent 1px 3px),
     linear-gradient(90deg, #12110f 0%, #2c2823 48%, #161412 100%);
 }
-.app[data-hold="left"] .frame .dial-window::before,
-.app[data-hold="right"] .frame .dial-window::before {
+.app[data-hold="left"] .exposure-bar .dial-window::before,
+.app[data-hold="right"] .exposure-bar .dial-window::before {
   background: linear-gradient(
     to bottom,
     #100f0d 0%,
@@ -616,8 +621,8 @@ em { font-style: normal; color: var(--muted); }
     #100f0d 100%
   );
 }
-.app[data-hold="left"] .frame .dial-window::after,
-.app[data-hold="right"] .frame .dial-window::after {
+.app[data-hold="left"] .exposure-bar .dial-window::after,
+.app[data-hold="right"] .exposure-bar .dial-window::after {
   top: 50%;
   bottom: auto;
   left: 3px;
@@ -626,7 +631,7 @@ em { font-style: normal; color: var(--muted); }
   height: 42px;
   transform: translateY(-50%);
 }
-.app[data-hold="left"] .frame .dial-index {
+.app[data-hold="left"] .exposure-bar .dial-index {
   top: 50%;
   left: 2px;
   width: 5px;
@@ -634,7 +639,7 @@ em { font-style: normal; color: var(--muted); }
   transform: translateY(-50%);
   clip-path: polygon(100% 50%, 0 0, 0 100%);
 }
-.app[data-hold="right"] .frame .dial-index {
+.app[data-hold="right"] .exposure-bar .dial-index {
   top: 50%;
   left: auto;
   right: 2px;
@@ -643,10 +648,10 @@ em { font-style: normal; color: var(--muted); }
   transform: translateY(-50%);
   clip-path: polygon(0 50%, 100% 0, 100% 100%);
 }
-.app[data-hold="left"] .frame .dial-tape span::after,
-.app[data-hold="right"] .frame .dial-tape span::after { display: none; }
-.app[data-hold="left"] .frame .dial-tape span,
-.app[data-hold="right"] .frame .dial-tape span {
+.app[data-hold="left"] .exposure-bar .dial-tape span::after,
+.app[data-hold="right"] .exposure-bar .dial-tape span::after { display: none; }
+.app[data-hold="left"] .exposure-bar .dial-tape span,
+.app[data-hold="right"] .exposure-bar .dial-tape span {
   width: 22px;
   height: 52px;
 }
@@ -673,7 +678,7 @@ em { font-style: normal; color: var(--muted); }
 .app[data-hold="left"] .zoom-bar button { transform: rotate(-90deg); }
 .app[data-hold="right"] .zoom-bar button { transform: rotate(90deg); }
 .app[data-hold="upside"] .hud .chip,
-.app[data-hold="upside"] .frame .meter .chip,
+.app[data-hold="upside"] .exposure-bar .meter .chip,
 .app[data-hold="upside"] .zoom-bar button,
 .app[data-hold="upside"] .zoom-bar span { transform: rotate(180deg); }
 

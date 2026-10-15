@@ -110,7 +110,9 @@ export function App() {
       const columnStyle = getComputedStyle(element);
       const columnPad = Number.parseFloat(columnStyle.paddingTop) + Number.parseFloat(columnStyle.paddingBottom);
       const dockHeight = dock instanceof HTMLElement ? dock.offsetHeight : 0;
-      const height = Math.max(0, element.clientHeight - columnPad - dockHeight - padY);
+      const dials = element.querySelector(".exposure-bar");
+      const dialHeight = dials instanceof HTMLElement ? dials.offsetHeight : 0;
+      const height = Math.max(0, element.clientHeight - columnPad - dockHeight - dialHeight - padY);
       const portrait = window.matchMedia("(orientation: portrait)").matches;
       portraitRef.current = portrait;
       setViewportPortrait(portrait);
@@ -120,6 +122,8 @@ export function App() {
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(element);
+    const dials = element.querySelector(".exposure-bar");
+    if (dials) observer.observe(dials);
     const media = window.matchMedia("(orientation: portrait)");
     media.addEventListener("change", measure);
     return () => {
@@ -652,14 +656,6 @@ export function App() {
                   <strong>{lensName}</strong>
                 </button>
               </div>
-              <ExposureDials
-                iso={iso}
-                shutter={shutter}
-                aperture={aperture}
-                onIso={(delta) => setIso((value) => stepIso(value, delta))}
-                onShutter={(delta) => setShutter((value) => stepShutter(value, -delta))}
-                onAperture={(delta) => setAperture((value) => stepAperture(value, -delta))}
-              />
               <div className="zoom-bar">
                 <button type="button" aria-label="缩小" onClick={() => setZoom((value) => stepZoom(value, -1))} disabled={zoom <= 1}>
                   −
@@ -669,6 +665,16 @@ export function App() {
                   +
                 </button>
               </div>
+            </div>
+            <div className="exposure-bar">
+              <ExposureDials
+                iso={iso}
+                shutter={shutter}
+                aperture={aperture}
+                onIso={(delta) => setIso((value) => stepIso(value, delta))}
+                onShutter={(delta) => setShutter((value) => stepShutter(value, -delta))}
+                onAperture={(delta) => setAperture((value) => stepAperture(value, -delta))}
+              />
             </div>
           </div>
 
