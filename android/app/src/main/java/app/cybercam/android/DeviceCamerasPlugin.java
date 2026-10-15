@@ -31,6 +31,8 @@ public class DeviceCamerasPlugin extends Plugin {
     private PluginCall startCall;
     private PluginCall captureCall;
     private String activeId;
+    private int openGeneration;
+    private boolean resumed = true;
     private final Handler main = new Handler(Looper.getMainLooper());
 
     @PluginMethod
@@ -108,79 +110,110 @@ public class DeviceCamerasPlugin extends Plugin {
         }
     }
 
+    private final CameraSession.Listener sessionListener = new CameraSession.Listener() {
+        @Override
+        public void onFrame(byte[] jpeg) {
+            JSObject payload = new JSObject();
+            payload.put("jpeg", Base64.encodeToString(jpeg, Base64.NO_WRAP));
+            notifyListeners("frame", payload);
+        }
+
+        @Override
+        public void onReady() {
+            PluginCall pending = startCall;
+            startCall = null;
+            if (pending != null) pending.resolve();
+        }
+
+        @Override
+        public void onFailed(String message) {
+            PluginCall pendingStart = startCall;
+            PluginCall pendingCapture = captureCall;
+            startCall = null;
+            captureCall = null;
+            if (pendingStart != null) pendingStart.reject(message);
+            if (pendingCapture != null) pendingCapture.reject(message);
+        }
+
+        @Override
+        public void onStill(byte[] jpeg) {
+            PluginCall pending = captureCall;
+            captureCall = null;
+            if (pending == null) return;
+                    JSObject result = new JSObject();
+                    result.put("jpeg", Base64.encodeToString(jpeg, Base64.NO_WRAP));
+                    pending.resolve(result);
+        }
+
+        @Override
+        public void onCaptureFailed(String message) {
+            PluginCall pending = captureCall;
+            captureCall = null;
+            if (pending != null) pending.reject(message);
+        }
+    };
+
     private void resolveStart(PluginCall call) {
         String id = call.getString("id");
         if (id == null || id.isEmpty()) {
             call.reject("missing-camera");
             return;
         }
+        startCall = call;
+        activeId = id;
+        beginOpen();
+    }
+
+    private void beginOpen() {
+        if (activeId == null || !resumed) return;
+        int ticket = ++openGeneration;
+        PluginCall call = startCall;
         try {
             if (catalog == null) catalog = CameraCatalog.read(manager());
-            CameraCatalog.Entry entry = catalog.get(id);
+            CameraCatalog.Entry entry = catalog.get(activeId);
             if (entry == null) {
                 catalog = CameraCatalog.read(manager());
-                entry = catalog.get(id);
+                entry = catalog.get(activeId);
             }
             if (entry == null) {
-                call.reject("missing-camera");
+                if (call != null) {
+                    startCall = null;
+                    call.reject("missing-camera");
+                }
                 return;
             }
             if (session == null) session = new CameraSession(manager());
             session.setDisplayRotation(currentRotation());
-            startCall = call;
-            activeId = id;
-            session.start(entry, new CameraSession.Listener() {
-                @Override
-                public void onFrame(byte[] jpeg) {
-                    JSObject payload = new JSObject();
-                    payload.put("jpeg", Base64.encodeToString(jpeg, Base64.NO_WRAP));
-                    notifyListeners("frame", payload);
-                }
-
-                @Override
-                public void onReady() {
-                    PluginCall pending = startCall;
-                    startCall = null;
-                    if (pending != null) pending.resolve();
-                }
-
-                @Override
-                public void onFailed(String message) {
-                    PluginCall pendingStart = startCall;
-                    PluginCall pendingCapture = captureCall;
-                    startCall = null;
-                    captureCall = null;
-                    if (pendingStart != null) pendingStart.reject(message);
-                    if (pendingCapture != null) pendingCapture.reject(message);
-                }
-
-                @Override
-                public void onStill(byte[] jpeg) {
-                    PluginCall pending = captureCall;
-                    captureCall = null;
-                    if (pending == null) return;
-                    JSObject result = new JSObject();
-                    result.put("jpeg", Base64.encodeToString(jpeg, Base64.NO_WRAP));
-                    pending.resolve(result);
-                }
-
-                @Override
-                public void onCaptureFailed(String message) {
-                    PluginCall pending = captureCall;
-                    captureCall = null;
-                    if (pending != null) pending.reject(message);
-                }
-            });
-            main.postDelayed(() -> {
-                if (startCall == call) {
+            session.start(entry, sessionListener);
+            if (call != null) {
+                main.postDelayed(() -> {
+                    if (ticket != openGeneration || startCall != call) return;
                     startCall = null;
                     if (session != null) session.stop();
                     call.reject("timeout");
-                }
-            }, 8000);
+                }, 8000);
+            }
         } catch (Exception exception) {
-            call.reject("open-failed");
+            if (call != null) {
+                startCall = null;
+                call.reject("open-failed");
+            }
         }
+    }
+
+    @Override
+    protected void handleOnPause() {
+        super.handleOnPause();
+        resumed = false;
+        if (session != null) session.stop();
+    }
+
+    @Override
+    protected void handleOnResume() {
+        super.handleOnResume();
+        resumed = true;
+        if (activeId != null) beginOpen();
+        if (getBridge() != null) getBridge().triggerDocumentJSEvent("cybercam-resume");
     }
 
     @Override

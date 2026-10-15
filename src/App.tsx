@@ -13,6 +13,7 @@ import { createFinder } from "./lib/finder";
 import { framedProfile, frameSize, orientedAspect, sensorConstraints, SENSOR_HEIGHT, SENSOR_WIDTH, STILL_MAX_EDGE } from "./lib/frame";
 import { hardwareLensLabel, lensLabel, preferredHardwareCamera, shouldMirrorTrack, type HardwareCamera, type Lens } from "./lib/lenses";
 import { captureHardwareStill, drawHardwareFrame, listHardwareCameras, nativeCamerasSupported, onHardwareFrame, startHardwareCamera, stopHardwareCamera } from "./lib/native-cameras";
+import { streamNeedsRestart } from "./lib/preview-session";
 import { encodeRaw, rgba8ToRaw } from "./lib/raw";
 import { clampZoom, formatZoom, stepZoom } from "./lib/zoom";
 
@@ -42,6 +43,7 @@ export function App() {
   const [message, setMessage] = useState<string | null>(null);
   const [flash, setFlash] = useState(false);
   const [zoom, setZoom] = useState(1);
+  const [previewEpoch, setPreviewEpoch] = useState(0);
   const stageRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -55,8 +57,17 @@ export function App() {
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const pinch = useRef<{ distance: number; zoom: number } | null>(null);
   const backendRef = useRef(backend);
+  const sourceRef = useRef(source);
+  const resumeAt = useRef(0);
+  const reopenPreview = () => {
+    const now = Date.now();
+    if (now - resumeAt.current < 1000) return;
+    resumeAt.current = now;
+    setPreviewEpoch((value) => value + 1);
+  };
   const hardwareRef = useRef<HardwareCamera[]>([]);
   backendRef.current = backend;
+  sourceRef.current = source;
   const finderState = useRef({
     source,
     cameraId,
@@ -209,6 +220,32 @@ export function App() {
   }, [backend, deviceId, source]);
 
   useEffect(() => {
+    const restart = () => {
+      if (document.visibilityState === "hidden") return;
+      if (backendRef.current !== "web" || sourceRef.current !== "live") return;
+      const video = videoRef.current;
+      const stream = video?.srcObject instanceof MediaStream ? video.srcObject : null;
+      if (!streamNeedsRestart(stream)) {
+        if (video && video.paused && stream) {
+          void video.play().catch(() => reopenPreview());
+        }
+        return;
+      }
+      reopenPreview();
+    };
+    document.addEventListener("visibilitychange", restart);
+    document.addEventListener("cybercam-resume", restart);
+    window.addEventListener("focus", restart);
+    window.addEventListener("pageshow", restart);
+    return () => {
+      document.removeEventListener("visibilitychange", restart);
+      document.removeEventListener("cybercam-resume", restart);
+      window.removeEventListener("focus", restart);
+      window.removeEventListener("pageshow", restart);
+    };
+  }, []);
+
+  useEffect(() => {
     if (backend !== "web" || source !== "live") return;
     let stream: MediaStream | null = null;
     let cancelled = false;
@@ -229,8 +266,12 @@ export function App() {
         const element = videoRef.current;
         if (!element) return;
         element.srcObject = next;
-        await element.play();
         const track = next.getVideoTracks()[0];
+        track?.addEventListener("ended", () => {
+          if (cancelled || document.visibilityState === "hidden") return;
+          reopenPreview();
+        });
+        await element.play();
         if (track) {
           try {
             await track.applyConstraints({ width: { ideal: SENSOR_WIDTH }, height: { ideal: SENSOR_HEIGHT } });
@@ -255,7 +296,7 @@ export function App() {
       const element = videoRef.current;
       if (element) element.srcObject = null;
     };
-  }, [backend, deviceId, refreshLenses, source]);
+  }, [backend, deviceId, previewEpoch, refreshLenses, source]);
 
   const grab = useCallback(
     (maxEdge: number) => {
@@ -278,12 +319,20 @@ export function App() {
     const finder = createFinder(preview);
     let stop = false;
     let raf = 0;
+    let pageVisible = document.visibilityState !== "hidden";
     let signature = "";
     let lastLiveDraw = 0;
+    const schedule = () => {
+      if (stop || !pageVisible || raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        loop();
+      });
+    };
     const loop = () => {
       if (stop) return;
       try {
-        if (busy.current || document.hidden) return;
+        if (!pageVisible || busy.current) return;
         const state = finderState.current;
         if (state.frame.width < 2 || state.frame.height < 2) return;
         const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -306,6 +355,11 @@ export function App() {
           }
         } else if (live) {
           const video = videoRef.current;
+          const stream = video?.srcObject instanceof MediaStream ? video.srcObject : null;
+          if (streamNeedsRestart(stream)) {
+            reopenPreview();
+            return;
+          }
           if (video && video.readyState >= 2 && video.videoWidth > 0) {
             drew = finder.draw(video, video.videoWidth, video.videoHeight, bufferW, bufferH, grade, state.zoom);
           }
@@ -324,13 +378,29 @@ export function App() {
           }
         }
       } finally {
-        if (!stop) raf = requestAnimationFrame(loop);
+        schedule();
       }
     };
-    raf = requestAnimationFrame(loop);
+    const onVisibility = () => {
+      pageVisible = document.visibilityState !== "hidden";
+      if (pageVisible) schedule();
+    };
+    const onResume = () => {
+      pageVisible = true;
+      schedule();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    document.addEventListener("cybercam-resume", onResume);
+    window.addEventListener("focus", onResume);
+    window.addEventListener("pageshow", onResume);
+    schedule();
     return () => {
       stop = true;
       cancelAnimationFrame(raf);
+      document.removeEventListener("visibilitychange", onVisibility);
+      document.removeEventListener("cybercam-resume", onResume);
+      window.removeEventListener("focus", onResume);
+      window.removeEventListener("pageshow", onResume);
       finder.destroy();
     };
   }, [view]);
