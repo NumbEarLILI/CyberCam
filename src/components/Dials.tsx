@@ -61,7 +61,9 @@ function Dial({
 
   function moveBy(dx: number, dy: number) {
     const gesture = drag.current;
-    gesture.carry += projectMove(dx, dy, gesture.axisX, gesture.axisY);
+    // The wheel sticks to the finger. Dragging toward the next stop pulls that stop away,
+    // and the previous stop rolls into the center.
+    gesture.carry -= projectMove(dx, dy, gesture.axisX, gesture.axisY);
     const turned = advanceDial(gesture.index, labels.length, gesture.carry, SLOT);
     gesture.carry = turned.carry;
     gesture.index = turned.index;
@@ -103,13 +105,20 @@ function Dial({
   }
 
   function onKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
-    if (event.key === "ArrowRight" || event.key === "ArrowUp") {
-      event.preventDefault();
-      onStep(1);
-    } else if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
-      event.preventDefault();
-      onStep(-1);
-    }
+    const keyMove: Record<string, [number, number]> = {
+      ArrowRight: [SLOT, 0],
+      ArrowLeft: [-SLOT, 0],
+      ArrowDown: [0, SLOT],
+      ArrowUp: [0, -SLOT],
+    };
+    const delta = keyMove[event.key];
+    if (!delta) return;
+    event.preventDefault();
+    const axis = dialAxis(event.currentTarget);
+    drag.current = { ...drag.current, ...axis, carry: 0, index: shown, pointer: -1 };
+    moveBy(delta[0], delta[1]);
+    drag.current.carry = 0;
+    setNudge({ x: 0, y: 0 });
   }
 
   const prev = shown > 0 ? labels[shown - 1] : "";
