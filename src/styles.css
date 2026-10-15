@@ -510,45 +510,6 @@ em { font-style: normal; color: var(--muted); }
 .pipe i { width: 18px; height: 1px; background: var(--line); display: block; }
 .pipe .on { color: var(--paper); }
 .respool p { margin: 8px 0; color: var(--muted); font-size: 13px; }
-.respool .meter {
-  width: 100%;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 8px;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  backdrop-filter: none;
-}
-.respool .dial {
-  flex: none;
-  flex-direction: row;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 10px;
-  width: 100%;
-  min-width: 0;
-  min-height: 58px;
-  padding: 0;
-}
-.respool .dial .meta {
-  flex: none;
-  width: 2.8em;
-  font-size: 12px;
-  text-align: left;
-  letter-spacing: 0.12em;
-}
-.respool .dial-window {
-  flex: 1 1 auto;
-  width: auto;
-  min-width: 0;
-  height: 44px;
-  border-radius: 12px;
-}
-.respool .dial-tape span { font-size: 13px; }
-.respool .dial-tape .is-current { font-size: 20px; }
 .scroll { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; }
 .mini {
   min-width: 92px;

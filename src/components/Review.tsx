@@ -4,8 +4,7 @@ import { FILMS, getFilm } from "../data/films";
 import { downloadBuffer, formatBytes } from "../lib/bitmap";
 import { createDevelopPort } from "../lib/develop-port";
 import { saveShot, type Shot } from "../lib/db";
-import { ExposureDials } from "./Dials";
-import { formatAperture, formatShutter, stepAperture, stepIso, stepShutter } from "../lib/exposure";
+import { formatAperture, formatShutter } from "../lib/exposure";
 import type { DevelopRecipe, DevelopSource } from "../lib/render-shot";
 import { CameraArt, FilmArt } from "./art";
 
@@ -290,23 +289,6 @@ export function Review({ shot, onClose, onUpdate, onDelete }: Props) {
             </button>
           ))}
         </div>
-        {recipe.iso != null && recipe.shutter != null && recipe.aperture != null ? (
-          <>
-            <p>曝光</p>
-            <ExposureDials
-              iso={recipe.iso}
-              shutter={recipe.shutter}
-              aperture={recipe.aperture}
-              onIso={(delta) => setRecipe((current) => ({ ...current, iso: stepIso(current.iso ?? film.iso, delta) }))}
-              onShutter={(delta) =>
-                setRecipe((current) => ({ ...current, shutter: stepShutter(current.shutter ?? 1 / 125, -delta) }))
-              }
-              onAperture={(delta) =>
-                setRecipe((current) => ({ ...current, aperture: stepAperture(current.aperture ?? 4, -delta) }))
-              }
-            />
-          </>
-        ) : null}
         <p>换胶卷</p>
         <div className="scroll">
           {FILMS.map((item) => (
