@@ -1,6 +1,7 @@
 import { readSource, toImageData } from "./bitmap";
 import { applyCamera, applyFilm, rawToFloat, type CameraProfile, type FilmProfile } from "./develop";
 import { rgba8ToRaw } from "./raw";
+import { zoomedCover } from "./zoom";
 
 export type FinderGrade = {
   camera: CameraProfile;
@@ -17,6 +18,7 @@ export type Finder = {
     width: number,
     height: number,
     grade: FinderGrade,
+    zoom?: number,
   ): boolean;
   noteFrame(gapMs: number): void;
   destroy(): void;
@@ -273,7 +275,7 @@ class GpuFinder implements Finder {
     return new GpuFinder(gl, canvas, program, sourceTex, vao, buffer);
   }
 
-  draw(source: CanvasImageSource, sourceWidth: number, sourceHeight: number, width: number, height: number, grade: FinderGrade) {
+  draw(source: CanvasImageSource, sourceWidth: number, sourceHeight: number, width: number, height: number, grade: FinderGrade, zoom = 1) {
     if (sourceWidth < 2 || sourceHeight < 2 || width < 2 || height < 2) return false;
     const gl = this.gl;
     const size = fitBuffer(width, height, this.cap);
@@ -298,7 +300,7 @@ class GpuFinder implements Finder {
     gl.useProgram(this.program);
     const camera = grade.camera;
     const film = grade.film;
-    const cover = coverScale(sourceWidth / sourceHeight, this.width / this.height);
+    const cover = zoomedCover(coverScale(sourceWidth / sourceHeight, this.width / this.height), zoom);
     gl.uniform2f(this.loc.cover, cover[0], cover[1]);
     gl.uniform2f(this.loc.outSize, this.width, this.height);
     gl.uniform1f(this.loc.mirror, grade.mirror ? 1 : 0);
@@ -347,10 +349,10 @@ function createCpuFinder(canvas: HTMLCanvasElement): Finder {
   const scratchCtx = scratch.getContext("2d", { willReadFrequently: true });
   const out = canvas.getContext("2d", { alpha: false });
   return {
-    draw(source, sourceWidth, sourceHeight, width, height, grade) {
+    draw(source, sourceWidth, sourceHeight, width, height, grade, zoom = 1) {
       if (!scratchCtx || !out || sourceWidth < 2 || sourceHeight < 2) return false;
       const size = fitBuffer(width, height, PREVIEW_MIN);
-      const image = readSource(source, sourceWidth, sourceHeight, grade.mirror, 160);
+      const image = readSource(source, sourceWidth, sourceHeight, grade.mirror, 160, zoom);
       const optics = applyCamera(rawToFloat(rgba8ToRaw(image.data, image.width, image.height)), grade.camera, grade.ev);
       const rgba = applyFilm(optics, grade.film, { grain: false });
       scratch.width = optics.width;

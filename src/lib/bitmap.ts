@@ -1,3 +1,5 @@
+import { zoomSourceRect } from "./zoom";
+
 export function fitSize(width: number, height: number, maxEdge: number) {
   const edge = Math.max(width, height);
   if (edge <= maxEdge) return { width: Math.max(1, width), height: Math.max(1, height) };
@@ -14,8 +16,10 @@ export function readSource(
   sourceHeight: number,
   mirror: boolean,
   maxEdge: number,
+  zoom = 1,
 ): ImageData {
-  const size = fitSize(sourceWidth, sourceHeight, maxEdge);
+  const rect = zoomSourceRect(sourceWidth, sourceHeight, zoom);
+  const size = fitSize(rect.width, rect.height, maxEdge);
   const canvas = document.createElement("canvas");
   canvas.width = size.width;
   canvas.height = size.height;
@@ -25,7 +29,7 @@ export function readSource(
     ctx.translate(size.width, 0);
     ctx.scale(-1, 1);
   }
-  ctx.drawImage(source, 0, 0, size.width, size.height);
+  ctx.drawImage(source, rect.x, rect.y, rect.width, rect.height, 0, 0, size.width, size.height);
   return ctx.getImageData(0, 0, size.width, size.height);
 }
 

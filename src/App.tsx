@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { CameraArt, FilmArt } from "./components/art";
+import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
 import { Gallery } from "./components/Gallery";
 import { Review } from "./components/Review";
 import { Sheets } from "./components/Sheets";
@@ -11,6 +10,7 @@ import { applyCamera, applyFilm, rawToFloat } from "./lib/develop";
 import { createFinder } from "./lib/finder";
 import { lensLabel, shouldMirrorTrack, type Lens } from "./lib/lenses";
 import { encodeRaw, rgba8ToRaw } from "./lib/raw";
+import { clampZoom, formatZoom, stepZoom } from "./lib/zoom";
 
 type Source = "live" | "import";
 type Phase = "raw" | "optics" | "film";
@@ -33,7 +33,9 @@ export function App() {
   const [phase, setPhase] = useState<Phase | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [flash, setFlash] = useState(false);
+  const [zoom, setZoom] = useState(1);
   const stageRef = useRef<HTMLDivElement>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const sensorRef = useRef<HTMLCanvasElement>(null);
   const previewRef = useRef<HTMLCanvasElement>(null);
@@ -41,15 +43,18 @@ export function App() {
   const busy = useRef(false);
   const [frame, setFrame] = useState({ width: 0, height: 0 });
   const sensorEpoch = useRef(0);
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
+  const pinch = useRef<{ distance: number; zoom: number } | null>(null);
   const finderState = useRef({
     source,
     cameraId,
     filmId,
     ev,
     mirror,
+    zoom,
     frame,
   });
-  finderState.current = { source, cameraId, filmId, ev, mirror, frame };
+  finderState.current = { source, cameraId, filmId, ev, mirror, zoom, frame };
 
   const camera = getCamera(cameraId);
   const film = getFilm(filmId);
@@ -63,11 +68,20 @@ export function App() {
     const element = stageRef.current;
     if (!element) return;
     const measure = () => {
-      const style = getComputedStyle(element);
-      const padX = Number.parseFloat(style.paddingLeft) + Number.parseFloat(style.paddingRight);
-      const padY = Number.parseFloat(style.paddingTop) + Number.parseFloat(style.paddingBottom);
-      const width = Math.max(0, element.clientWidth - padX);
-      const height = Math.max(0, element.clientHeight - padY);
+      const stage = element.querySelector(".stage");
+      const dock = element.querySelector(".dock");
+      if (!stage) return;
+      const landscape = window.matchMedia("(orientation: landscape) and (max-height: 520px)").matches;
+      const stageStyle = getComputedStyle(stage);
+      const padX = Number.parseFloat(stageStyle.paddingLeft) + Number.parseFloat(stageStyle.paddingRight);
+      const padY = Number.parseFloat(stageStyle.paddingTop) + Number.parseFloat(stageStyle.paddingBottom);
+      const width = Math.max(0, stage.clientWidth - padX);
+      const columnStyle = getComputedStyle(element);
+      const columnPad = Number.parseFloat(columnStyle.paddingTop) + Number.parseFloat(columnStyle.paddingBottom);
+      const dockHeight = dock instanceof HTMLElement ? dock.offsetHeight : 0;
+      const height = landscape
+        ? Math.max(0, stage.clientHeight - padY)
+        : Math.max(0, element.clientHeight - columnPad - dockHeight - padY);
       const byHeight = height * camera.profile.aspect;
       if (byHeight <= width) setFrame({ width: byHeight, height });
       else setFrame({ width, height: width / camera.profile.aspect });
@@ -77,6 +91,21 @@ export function App() {
     observer.observe(element);
     return () => observer.disconnect();
   }, [camera.profile.aspect, view]);
+
+  useEffect(() => {
+    setZoom(1);
+  }, [deviceId, source]);
+
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (!frame || view !== "camera") return;
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      setZoom((value) => stepZoom(value, event.deltaY < 0 ? 1 : -1));
+    };
+    frame.addEventListener("wheel", onWheel, { passive: false });
+    return () => frame.removeEventListener("wheel", onWheel);
+  }, [view]);
 
   const refreshLenses = useCallback(async () => {
     if (!navigator.mediaDevices?.enumerateDevices) return;
@@ -143,13 +172,13 @@ export function App() {
       if (source === "live") {
         const video = videoRef.current;
         if (!video || video.videoWidth === 0) return null;
-        return readSource(video, video.videoWidth, video.videoHeight, mirror, maxEdge);
+        return readSource(video, video.videoWidth, video.videoHeight, mirror, maxEdge, zoom);
       }
       const sensor = sensorRef.current;
       if (!sensor || sensor.width === 0) return null;
-      return readSource(sensor, sensor.width, sensor.height, false, maxEdge);
+      return readSource(sensor, sensor.width, sensor.height, false, maxEdge, zoom);
     },
-    [mirror, source],
+    [mirror, source, zoom],
   );
 
   useEffect(() => {
@@ -171,7 +200,7 @@ export function App() {
         const bufferW = Math.max(2, Math.round(state.frame.width * dpr));
         const bufferH = Math.max(2, Math.round(state.frame.height * dpr));
         const live = state.source === "live";
-        const mark = `${state.source}|${state.cameraId}|${state.filmId}|${state.ev}|${state.mirror}|${bufferW}|${bufferH}|${sensorEpoch.current}`;
+        const mark = `${state.source}|${state.cameraId}|${state.filmId}|${state.ev}|${state.mirror}|${state.zoom}|${bufferW}|${bufferH}|${sensorEpoch.current}`;
         if (!live && mark === signature) return;
         const grade = {
           camera: getCamera(state.cameraId).profile,
@@ -183,12 +212,12 @@ export function App() {
         if (live) {
           const video = videoRef.current;
           if (video && video.readyState >= 2 && video.videoWidth > 0) {
-            drew = finder.draw(video, video.videoWidth, video.videoHeight, bufferW, bufferH, grade);
+            drew = finder.draw(video, video.videoWidth, video.videoHeight, bufferW, bufferH, grade, state.zoom);
           }
         } else {
           const sensor = sensorRef.current;
           if (sensor && sensor.width > 1 && sensor.height > 1) {
-            drew = finder.draw(sensor, sensor.width, sensor.height, bufferW, bufferH, grade);
+            drew = finder.draw(sensor, sensor.width, sensor.height, bufferW, bufferH, grade, state.zoom);
           }
         }
         if (drew) {
@@ -293,8 +322,39 @@ export function App() {
     canvas.height = size.height;
     canvas.getContext("2d")?.drawImage(img, 0, 0, size.width, size.height);
     sensorEpoch.current += 1;
+    setZoom(1);
     setSource("import");
   }
+
+  function trackPointer(event: PointerEvent<HTMLDivElement>) {
+    if ((event.target as HTMLElement).closest("button")) return;
+    const frame = frameRef.current;
+    if (!frame) return;
+    frame.setPointerCapture(event.pointerId);
+    pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pointers.current.size === 2) {
+      const [a, b] = [...pointers.current.values()];
+      const distance = Math.hypot(a.x - b.x, a.y - b.y);
+      pinch.current = { distance, zoom };
+    }
+  }
+
+  function movePointer(event: PointerEvent<HTMLDivElement>) {
+    if (!pointers.current.has(event.pointerId)) return;
+    pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    const gesture = pinch.current;
+    if (pointers.current.size !== 2 || !gesture || gesture.distance <= 0) return;
+    const [a, b] = [...pointers.current.values()];
+    const distance = Math.hypot(a.x - b.x, a.y - b.y);
+    setZoom(clampZoom((gesture.zoom * distance) / gesture.distance));
+  }
+
+  function releasePointer(event: PointerEvent<HTMLDivElement>) {
+    pointers.current.delete(event.pointerId);
+    if (pointers.current.size < 2) pinch.current = null;
+  }
+
+  const lensName = source === "import" ? "导入的照片" : (lenses.find((lens) => lens.deviceId === activeDeviceId)?.label ?? "正在打开");
 
   async function removeShot(id: string) {
     setShots((current) => current.filter((shot) => shot.id !== id));
@@ -326,62 +386,71 @@ export function App() {
             </div>
           </header>
 
-          <div className="stage" ref={stageRef}>
-            <div className="frame" style={{ width: frame.width, height: frame.height }}>
+          <div className="finder-column" ref={stageRef}>
+          <div className="stage">
+            <div
+              className="frame"
+              ref={frameRef}
+              style={{ width: frame.width, height: frame.height }}
+              onPointerDown={trackPointer}
+              onPointerMove={movePointer}
+              onPointerUp={releasePointer}
+              onPointerCancel={releasePointer}
+            >
               <video ref={videoRef} className={source === "live" ? `fill ${mirror ? "mirror" : ""}` : "sensor-hidden"} playsInline muted autoPlay />
               <canvas ref={sensorRef} className={source === "live" ? "sensor-hidden" : "fill"} />
               <canvas ref={previewRef} className="fill preview" />
               <div className="thirds" />
               {cameraError && source === "live" ? <p className="finder-empty">没有打开摄像头。可以从上方导入一张照片。</p> : null}
               {flash ? <div className="flash" /> : null}
+              <div className="hud">
+                <button type="button" className="chip" onClick={() => setPicker("camera")}>
+                  <span className="meta">机身</span>
+                  <strong>{camera.name}</strong>
+                </button>
+                <button type="button" className="chip" onClick={() => setPicker("film")}>
+                  <span className="meta">胶卷</span>
+                  <strong>
+                    {film.name} · {film.iso}
+                  </strong>
+                </button>
+                <div className="chip ev-chip">
+                  <button type="button" onClick={() => setEv((value) => clampEv(value - 0.5))} aria-label="降低曝光">
+                    −
+                  </button>
+                  <span>{formatEv(ev)}</span>
+                  <button type="button" onClick={() => setEv((value) => clampEv(value + 0.5))} aria-label="提高曝光">
+                    +
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  className="chip"
+                  onClick={() => {
+                    void refreshLenses();
+                    setPicker("lens");
+                  }}
+                >
+                  <span className="meta">{source === "import" ? "画面" : "摄像头"}</span>
+                  <strong>{lensName}</strong>
+                </button>
+              </div>
+              <div className="zoom-bar">
+                <button type="button" aria-label="缩小" onClick={() => setZoom((value) => stepZoom(value, -1))} disabled={zoom <= 1}>
+                  −
+                </button>
+                <span>{formatZoom(zoom)}</span>
+                <button type="button" aria-label="放大" onClick={() => setZoom((value) => stepZoom(value, 1))} disabled={zoom >= 4}>
+                  +
+                </button>
+              </div>
             </div>
           </div>
 
           <footer className="dock">
-            <div className="looks">
-              <button type="button" className="look" onClick={() => setPicker("camera")}>
-                <span className="art-slot">
-                  <CameraArt id={camera.id} />
-                </span>
-                <span>
-                  <span className="meta">机身</span>
-                  <strong>{camera.name}</strong>
-                </span>
-              </button>
-              <button type="button" className="look" onClick={() => setPicker("film")}>
-                <span className="art-slot film">
-                  <FilmArt id={film.id} />
-                </span>
-                <span>
-                  <span className="meta">胶卷</span>
-                  <strong>{film.name}</strong>
-                </span>
-              </button>
-            </div>
-            <div className="controls">
-              <div className="ev">
-                <button type="button" onClick={() => setEv((value) => clampEv(value - 0.5))} aria-label="降低曝光">
-                  −
-                </button>
-                <span>{formatEv(ev)}</span>
-                <button type="button" onClick={() => setEv((value) => clampEv(value + 0.5))} aria-label="提高曝光">
-                  +
-                </button>
-              </div>
-              <button type="button" className="shutter" aria-label="快门" onClick={() => void shoot()} disabled={phase !== null} />
-              <button
-                type="button"
-                className="lens-btn"
-                onClick={() => {
-                  void refreshLenses();
-                  setPicker("lens");
-                }}
-              >
-                <span className="meta">{source === "import" ? "画面" : "摄像头"}</span>
-                <strong>{source === "import" ? "导入的照片" : (lenses.find((lens) => lens.deviceId === activeDeviceId)?.label ?? "正在打开")}</strong>
-              </button>
-            </div>
+            <button type="button" className="shutter" aria-label="快门" onClick={() => void shoot()} disabled={phase !== null} />
           </footer>
+          </div>
           <input
             ref={fileRef}
             className="sensor-hidden"
