@@ -4,6 +4,12 @@ export type Shot = {
   cameraId: string;
   filmId: string;
   ev: number;
+  /** Shooting ISO. Missing on shots from before the exposure dials. */
+  iso?: number;
+  /** Shutter time in seconds. */
+  shutter?: number;
+  /** f-number. */
+  aperture?: number;
   /** The phone was portrait when the shutter closed, so the film gate is upright. */
   portrait?: boolean;
   seed: number;

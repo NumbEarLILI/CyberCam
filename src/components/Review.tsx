@@ -4,6 +4,8 @@ import { FILMS, getFilm } from "../data/films";
 import { downloadBuffer, formatBytes, rgbaToBlob } from "../lib/bitmap";
 import { saveShot, type Shot } from "../lib/db";
 import { applyCamera, applyFilm, floatToRgba, rawToFloat } from "../lib/develop";
+import { ExposureDials } from "./Dials";
+import { formatAperture, formatShutter, isoGrainScale, recipeEv, stepAperture, stepIso, stepShutter } from "../lib/exposure";
 import { framedProfile } from "../lib/frame";
 import { decodeRaw } from "../lib/raw";
 import { CameraArt, FilmArt } from "./art";
@@ -32,7 +34,7 @@ export function Review({ shot, onClose, onUpdate, onDelete }: Props) {
     (async () => {
       const decoded = decodeRaw(new Uint8Array(shot.raw));
       const linear = rawToFloat(decoded.image);
-      const optics = applyCamera(linear, framedProfile(camera.profile, shot.portrait), shot.ev);
+      const optics = applyCamera(linear, framedProfile(camera.profile, shot.portrait), recipeEv(shot.ev, film.iso, shot));
       const rawBlob = await rgbaToBlob(floatToRgba(linear), decoded.image.width, decoded.image.height, "image/jpeg", 0.86);
       const opticsBlob = await rgbaToBlob(floatToRgba(optics), optics.width, optics.height, "image/jpeg", 0.86);
       const rawUrl = URL.createObjectURL(rawBlob);
@@ -60,7 +62,7 @@ export function Review({ shot, onClose, onUpdate, onDelete }: Props) {
     };
   }, []);
 
-  async function redevelop(patch: Partial<Pick<Shot, "cameraId" | "filmId" | "ev">>) {
+  async function redevelop(patch: Partial<Pick<Shot, "cameraId" | "filmId" | "ev" | "iso" | "shutter" | "aperture">>) {
     if (lock.current) return;
     lock.current = true;
     setWorking(true);
@@ -68,14 +70,20 @@ export function Review({ shot, onClose, onUpdate, onDelete }: Props) {
     try {
       const nextCamera = getCamera(patch.cameraId ?? shot.cameraId);
       const nextFilm = getFilm(patch.filmId ?? shot.filmId);
-      const nextEv = patch.ev ?? shot.ev;
+      const next = { ...shot, ...patch };
       const decoded = decodeRaw(new Uint8Array(shot.raw));
-      const optics = applyCamera(rawToFloat(decoded.image), framedProfile(nextCamera.profile, shot.portrait), nextEv);
-      const rgba = applyFilm(optics, nextFilm.profile, { seed: shot.seed });
+      const optics = applyCamera(
+        rawToFloat(decoded.image),
+        framedProfile(nextCamera.profile, shot.portrait),
+        recipeEv(next.ev, nextFilm.iso, next),
+      );
+      const rgba = applyFilm(optics, nextFilm.profile, {
+        seed: shot.seed,
+        grainScale: next.iso == null ? 1 : isoGrainScale(next.iso, nextFilm.iso),
+      });
       const blob = await rgbaToBlob(rgba, optics.width, optics.height);
       const updated: Shot = {
-        ...shot,
-        ...patch,
+        ...next,
         jpeg: await blob.arrayBuffer(),
       };
       await saveShot(updated);
@@ -88,7 +96,7 @@ export function Review({ shot, onClose, onUpdate, onDelete }: Props) {
 
   const notes: Record<Stage, string> = {
     raw: `线性 RAW · ${formatBytes(shot.raw.byteLength)} · 完整画幅，没有暗角，也没有胶卷颜色`,
-    optics: `${camera.name} 已套上暗角、锐度和画幅。颜色还停在显影之前`,
+    optics: `${camera.name} 已套上暗角、锐度和画幅。${exposureNote(shot)}颜色还停在显影之前`,
     film: `${film.brand} ${film.name} · ${film.blurb}`,
   };
 
@@ -147,6 +155,19 @@ export function Review({ shot, onClose, onUpdate, onDelete }: Props) {
             </button>
           ))}
         </div>
+        {shot.iso != null && shot.shutter != null && shot.aperture != null ? (
+          <>
+            <p>曝光</p>
+            <ExposureDials
+              iso={shot.iso}
+              shutter={shot.shutter}
+              aperture={shot.aperture}
+              onIso={(delta) => void redevelop({ iso: stepIso(shot.iso ?? film.iso, delta) })}
+              onShutter={(delta) => void redevelop({ shutter: stepShutter(shot.shutter ?? 1 / 125, -delta) })}
+              onAperture={(delta) => void redevelop({ aperture: stepAperture(shot.aperture ?? 4, -delta) })}
+            />
+          </>
+        ) : null}
         <p>换胶卷</p>
         <div className="scroll">
           {FILMS.map((item) => (
@@ -168,4 +189,9 @@ export function Review({ shot, onClose, onUpdate, onDelete }: Props) {
       </div>
     </section>
   );
+}
+
+function exposureNote(shot: Shot) {
+  if (shot.iso == null || shot.shutter == null || shot.aperture == null) return "";
+  return ` ISO ${shot.iso} · ${formatShutter(shot.shutter)} · ${formatAperture(shot.aperture)}。`;
 }

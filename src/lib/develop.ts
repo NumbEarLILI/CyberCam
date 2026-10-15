@@ -34,6 +34,8 @@ export type FilmProfile = {
 export type DevelopOptions = {
   grain?: boolean;
   seed?: number;
+  /** Multiplier for the film's grain. 1 is the stock. Higher ISO pushes it up. */
+  grainScale?: number;
 };
 
 const PIVOT = 0.18;
@@ -176,7 +178,7 @@ export function applyFilm(image: FloatImage, film: FilmProfile, options: Develop
         const index = (y * width + x) * 3;
         const luma = Math.max(0, 0.2126 * rgb[index] + 0.7152 * rgb[index + 1] + 0.0722 * rgb[index + 2]);
         const weight = 0.4 + 0.6 * Math.sin(Math.min(luma, 1) * Math.PI);
-        const amp = film.grain * 0.2 * weight;
+        const amp = film.grain * 0.2 * weight * (options.grainScale ?? 1);
         if (film.monochrome) {
           rgb[index] += n * amp;
           rgb[index + 1] += n * amp;

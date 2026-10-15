@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
+import { ExposureDials } from "./components/Dials";
 import { Gallery } from "./components/Gallery";
 import { Review } from "./components/Review";
 import { Sheets } from "./components/Sheets";
@@ -7,6 +8,7 @@ import { getFilm } from "./data/films";
 import { copyBytes, fitSize, readSource, rgbaToBlob } from "./lib/bitmap";
 import { deleteShot, loadShots, saveShot, type Shot } from "./lib/db";
 import { applyCamera, applyFilm, rawToFloat } from "./lib/develop";
+import { BASE_APERTURE, BASE_SHUTTER, exposureStops, isoGrainScale, stepAperture, stepIso, stepShutter } from "./lib/exposure";
 import { createFinder } from "./lib/finder";
 import { framedProfile, frameSize, orientedAspect, sensorConstraints, SENSOR_HEIGHT, SENSOR_WIDTH, STILL_MAX_EDGE } from "./lib/frame";
 import { hardwareLensLabel, lensLabel, preferredHardwareCamera, shouldMirrorTrack, type HardwareCamera, type Lens } from "./lib/lenses";
@@ -22,6 +24,9 @@ export function App() {
   const [cameraId, setCameraId] = useState("leica-m6");
   const [filmId, setFilmId] = useState("portra-400");
   const [ev, setEv] = useState(0);
+  const [iso, setIso] = useState(400);
+  const [shutter, setShutter] = useState(BASE_SHUTTER);
+  const [aperture, setAperture] = useState(BASE_APERTURE);
   const [source, setSource] = useState<Source>("live");
   const [mirror, setMirror] = useState(false);
   const [picker, setPicker] = useState<Picker>(null);
@@ -62,10 +67,10 @@ export function App() {
     frame,
     backend,
   });
-  finderState.current = { source, cameraId, filmId, ev, mirror, zoom, frame, backend };
-
   const camera = getCamera(cameraId);
   const film = getFilm(filmId);
+  const totalEv = ev + exposureStops(iso, film.iso, shutter, aperture);
+  finderState.current = { source, cameraId, filmId, ev: totalEv, mirror, zoom, frame, backend };
   const active = shots.find((shot) => shot.id === activeId) ?? null;
 
   useEffect(() => {
@@ -361,12 +366,12 @@ export function App() {
       await sleep(420);
       setPhase("optics");
       await paint();
-      const optics = applyCamera(rawToFloat(rawImage), framedProfile(body.profile, portraitRef.current), ev);
+      const optics = applyCamera(rawToFloat(rawImage), framedProfile(body.profile, portraitRef.current), totalEv);
       await sleep(420);
       setPhase("film");
       await paint();
       const started = performance.now();
-      const rgba = applyFilm(optics, stock.profile, { seed });
+      const rgba = applyFilm(optics, stock.profile, { seed, grainScale: isoGrainScale(iso, stock.iso) });
       const jpeg = await rgbaToBlob(rgba, optics.width, optics.height);
       const shot: Shot = {
         id: crypto.randomUUID(),
@@ -374,6 +379,9 @@ export function App() {
         cameraId,
         filmId,
         ev,
+        iso,
+        shutter,
+        aperture,
         portrait: portraitRef.current,
         seed,
         raw: copyBytes(rawBytes),
@@ -395,7 +403,7 @@ export function App() {
       setPhase(null);
       busy.current = false;
     }
-  }, [backend, cameraId, ev, filmId, grab, picker, source, view]);
+  }, [aperture, backend, cameraId, ev, filmId, grab, iso, picker, shutter, source, totalEv, view]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -535,6 +543,14 @@ export function App() {
                   <strong>{lensName}</strong>
                 </button>
               </div>
+              <ExposureDials
+                iso={iso}
+                shutter={shutter}
+                aperture={aperture}
+                onIso={(delta) => setIso((value) => stepIso(value, delta))}
+                onShutter={(delta) => setShutter((value) => stepShutter(value, -delta))}
+                onAperture={(delta) => setAperture((value) => stepAperture(value, -delta))}
+              />
               <div className="zoom-bar">
                 <button type="button" aria-label="缩小" onClick={() => setZoom((value) => stepZoom(value, -1))} disabled={zoom <= 1}>
                   −
@@ -597,6 +613,7 @@ export function App() {
         }}
         onPickFilm={(id) => {
           setFilmId(id);
+          setIso(getFilm(id).iso);
           setPicker(null);
         }}
         onPickLens={(id) => {

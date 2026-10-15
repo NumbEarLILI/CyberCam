@@ -185,6 +185,23 @@ em { font-style: normal; color: var(--muted); }
   padding: 4px;
   pointer-events: auto;
 }
+.meter {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+.frame .meter {
+  position: absolute;
+  z-index: 5;
+  left: 8px;
+  right: 8px;
+  bottom: 58px;
+  pointer-events: none;
+}
+.meter .chip { pointer-events: auto; }
+.meter .ev-chip span { min-width: 52px; }
+.meter .meta { padding-left: 8px; }
 .dock {
   position: relative;
   z-index: 2;
