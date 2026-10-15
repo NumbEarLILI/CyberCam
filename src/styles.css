@@ -407,9 +407,34 @@ em { font-style: normal; color: var(--muted); }
   object-fit: contain;
   display: block;
 }
-.review-frame.working img { filter: saturate(0.7); }
+.review-stack {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  max-height: min(68dvh, 820px);
+}
+.review-stack img { grid-area: 1 / 1; }
+.review-stack img.is-leaving { animation: develop-out 560ms ease forwards; }
+.review-stack img.is-arriving { animation: develop-in 560ms ease forwards; }
+.review-frame.is-developing .review-stack img.is-current { animation: develop-bath 1.6s ease-in-out infinite; }
+.develop-wash {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: linear-gradient(100deg, transparent 32%, rgba(255, 236, 210, 0.2) 50%, transparent 68%);
+  background-size: 220% 100%;
+  animation: develop-sweep 1.35s ease-in-out infinite;
+}
+@keyframes develop-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes develop-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes develop-bath {
+  0%, 100% { filter: brightness(0.9) saturate(0.82); }
+  50% { filter: brightness(1.05) saturate(1); }
+}
+@keyframes develop-sweep { from { background-position: 130% 0; } to { background-position: -130% 0; } }
 .waiting, .veil { color: var(--muted); padding: 24px; }
-.veil { position: absolute; inset: auto 12px 12px auto; background: rgba(0,0,0,0.6); border-radius: 999px; padding: 8px 12px; }
+.veil { position: absolute; z-index: 3; inset: auto 12px 12px auto; background: rgba(0,0,0,0.6); border-radius: 999px; padding: 8px 12px; }
 .segment, .pipe, .note, .respool, .downloads { width: min(920px, 100%); margin: 0 auto; }
 .segment { display: flex; gap: 8px; }
 .segment button { flex: 1; }
@@ -556,4 +581,10 @@ em { font-style: normal; color: var(--muted); }
 
 @media (prefers-reduced-motion: reduce) {
   .flash { animation: none; opacity: 0; }
+  .develop-wash,
+  .review-stack img.is-leaving,
+  .review-stack img.is-arriving,
+  .review-frame.is-developing .review-stack img.is-current { animation: none; }
+  .review-stack img.is-arriving { opacity: 1; }
+  .review-stack img.is-leaving { opacity: 0; }
 }
