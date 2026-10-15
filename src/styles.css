@@ -6,6 +6,11 @@
   --line: rgba(244, 240, 231, 0.12);
   --card: rgba(255, 255, 255, 0.045);
   --accent: #ff5a36;
+  /* Capacitor writes --safe-area-inset-*; WebView 140+ also fills env(). Take whichever is set. */
+  --inset-top: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px));
+  --inset-right: max(env(safe-area-inset-right, 0px), var(--safe-area-inset-right, 0px));
+  --inset-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
+  --inset-left: max(env(safe-area-inset-left, 0px), var(--safe-area-inset-left, 0px));
   font-family: Outfit, "Noto Sans SC", "PingFang SC", "WenQuanYi Micro Hei", "Droid Sans Fallback", sans-serif;
   font-weight: 400;
 }
@@ -29,6 +34,9 @@ em { font-style: normal; color: var(--muted); }
     radial-gradient(900px 420px at 50% -80px, rgba(255, 90, 54, 0.18), transparent 60%),
     var(--bg);
   overflow: hidden;
+  padding-top: var(--inset-top);
+  padding-left: var(--inset-left);
+  padding-right: var(--inset-right);
 }
 
 .camera-shell { flex: 1; min-height: 0; display: flex; flex-direction: column; }
@@ -183,7 +191,7 @@ em { font-style: normal; color: var(--muted); }
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 12px 20px calc(8px + env(safe-area-inset-bottom));
+  padding: 12px 20px calc(8px + var(--inset-bottom));
 }
 .shutter {
   width: 78px;
@@ -251,7 +259,7 @@ em { font-style: normal; color: var(--muted); }
   z-index: 20;
   background: #0c0c0b;
   overflow: auto;
-  padding: 18px 16px 32px;
+  padding: calc(18px + var(--inset-top)) calc(16px + var(--inset-right)) calc(32px + var(--inset-bottom)) calc(16px + var(--inset-left));
 }
 .overlay-bar { width: min(920px, 100%); margin: 0 auto 16px; }
 .gallery-grid {
@@ -326,7 +334,7 @@ em { font-style: normal; color: var(--muted); }
 .steps li[data-state="done"] { color: #c9e6a1; }
 .toast {
   position: fixed;
-  top: 16px;
+  top: calc(16px + var(--inset-top));
   left: 50%;
   transform: translateX(-50%);
   z-index: 50;
