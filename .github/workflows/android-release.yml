@@ -1,0 +1,51 @@
+name: Android release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: sdkmanager --install "platforms;android-36" "build-tools;35.0.0" "build-tools;36.0.0"
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build the web app into the Android project
+        run: npm run build:android
+
+      - name: Assemble the signed release APK
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: CyberCam ${{ github.ref_name }}
+          fail_on_unmatched_files: true
+          files: android/app/build/outputs/apk/release/app-release.apk
+          body: |
+            CyberCam ${{ github.ref_name }} 的签名 release APK。
+
+            安装包 ID 是 `app.cybercam.android`。没有摄像头时可以用试拍场景或导入照片。下载 RAW 和成片会打开系统分享，把文件存到相册或文件管理器。

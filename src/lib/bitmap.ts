@@ -62,7 +62,36 @@ export function rgbaToBlob(
   });
 }
 
-export function downloadBuffer(buffer: ArrayBuffer, filename: string, type: string) {
+export function bytesToBase64(bytes: Uint8Array) {
+  const chunkSize = 0x8000;
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+  }
+  return btoa(binary);
+}
+
+export async function downloadBuffer(buffer: ArrayBuffer, filename: string, type: string) {
+  const { Capacitor } = await import("@capacitor/core");
+  if (Capacitor.isNativePlatform()) {
+    const { Directory, Filesystem } = await import("@capacitor/filesystem");
+    const { Share } = await import("@capacitor/share");
+    const safeName = filename.replace(/[^\w.\-]+/g, "_");
+    await Filesystem.writeFile({
+      path: safeName,
+      data: bytesToBase64(new Uint8Array(buffer)),
+      directory: Directory.Cache,
+    });
+    const { uri } = await Filesystem.getUri({ path: safeName, directory: Directory.Cache });
+    try {
+      await Share.share({ title: safeName, files: [uri], dialogTitle: "保存文件" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (!/cancel/i.test(message)) throw error;
+    }
+    return;
+  }
+
   const url = URL.createObjectURL(new Blob([buffer], { type }));
   const link = document.createElement("a");
   link.href = url;

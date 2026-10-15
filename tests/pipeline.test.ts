@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CAMERAS } from "../src/data/cameras";
 import { FILMS } from "../src/data/films";
+import { bytesToBase64 } from "../src/lib/bitmap";
 import { linearToSrgbByte, srgbByteToLinear } from "../src/lib/color";
 import {
   applyCamera,
@@ -97,6 +98,16 @@ function developChart(filmId: string) {
   const optics = applyCamera(rawToFloat(raw), neutralCamera, 0);
   return applyFilm(optics, film.profile, { grain: false, seed: 1 });
 }
+
+describe("files", () => {
+  it("encodes bytes as base64 for the Android share sheet", () => {
+    expect(bytesToBase64(new Uint8Array([72, 105]))).toBe(btoa("Hi"));
+    const bytes = new Uint8Array(40000);
+    for (let index = 0; index < bytes.length; index += 1) bytes[index] = index % 251;
+    const decoded = Uint8Array.from(atob(bytesToBase64(bytes)), (char) => char.charCodeAt(0));
+    expect(Array.from(decoded)).toEqual(Array.from(bytes));
+  });
+});
 
 describe("color", () => {
   it("converts sRGB bytes to linear light and back", () => {

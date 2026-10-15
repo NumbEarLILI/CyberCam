@@ -13,3 +13,14 @@ npm run dev
 ```
 
 没有摄像头时用「试拍场景」，或导入一张照片，一样会先写 RAW 再显影。
+
+## Android release
+
+工程在 `android/`，应用 ID 是 `app.cybercam.android`。签名配置在 `android/keystore.properties`，这把钥匙只用于当前仓库的 release 包。上架 Play Store 前请换成自己的钥匙。
+
+```bash
+npm install
+npm run android:release
+```
+
+产物是 `android/app/build/outputs/apk/release/app-release.apk`。推送 `v*` 标签后，GitHub Actions 会用同一套签名打 APK 并发布到 Releases。手机上保存 RAW 或成片时，会打开系统分享。

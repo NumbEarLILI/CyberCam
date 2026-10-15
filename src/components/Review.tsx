@@ -158,10 +158,10 @@ export function Review({ shot, onClose, onUpdate, onDelete }: Props) {
       </div>
 
       <div className="downloads">
-        <button type="button" className="line-btn" onClick={() => downloadBuffer(shot.raw, `${base}.filmraw`, "application/octet-stream")}>
+        <button type="button" className="line-btn" onClick={() => void downloadBuffer(shot.raw, `${base}.filmraw`, "application/octet-stream")}>
           下载 RAW
         </button>
-        <button type="button" className="line-btn solid" onClick={() => downloadBuffer(shot.jpeg, `${base}.jpg`, "image/jpeg")}>
+        <button type="button" className="line-btn solid" onClick={() => void downloadBuffer(shot.jpeg, `${base}.jpg`, "image/jpeg")}>
           下载成片 · {formatBytes(shot.jpeg.byteLength)}
         </button>
       </div>
