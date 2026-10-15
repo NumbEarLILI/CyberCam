@@ -544,7 +544,7 @@ export function App() {
   }
 
   function trackPointer(event: PointerEvent<HTMLDivElement>) {
-    if ((event.target as HTMLElement).closest("button")) return;
+    if ((event.target as HTMLElement).closest("button, .dial")) return;
     const frame = frameRef.current;
     if (!frame) return;
     frame.setPointerCapture(event.pointerId);

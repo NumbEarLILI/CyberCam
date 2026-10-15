@@ -27,8 +27,10 @@ export function Review({ shot, onClose, onUpdate, onDelete }: Props) {
   const [pixels, setPixels] = useState("");
   const urlsRef = useRef<string[]>([]);
   const lock = useRef(false);
+  const pending = useRef<Partial<Pick<Shot, "cameraId" | "filmId" | "ev" | "iso" | "shutter" | "aperture">> | null>(null);
   const camera = getCamera(shot.cameraId);
   const film = getFilm(shot.filmId);
+  const dialLive = useRef({ iso: shot.iso ?? film.iso, shutter: shot.shutter ?? 1 / 125, aperture: shot.aperture ?? 4 });
 
   useEffect(() => {
     let cancelled = false;
@@ -70,36 +72,38 @@ export function Review({ shot, onClose, onUpdate, onDelete }: Props) {
     setPixels("");
   }, [stage, urls]);
 
+  useEffect(() => {
+    if (lock.current || pending.current) return;
+    dialLive.current = {
+      iso: shot.iso ?? film.iso,
+      shutter: shot.shutter ?? 1 / 125,
+      aperture: shot.aperture ?? 4,
+    };
+  }, [shot, film.iso]);
+
   async function redevelop(patch: Partial<Pick<Shot, "cameraId" | "filmId" | "ev" | "iso" | "shutter" | "aperture">>) {
+    pending.current = { ...(pending.current ?? {}), ...patch };
     if (lock.current) return;
     lock.current = true;
     setWorking(true);
     setStage("film");
     try {
-      const nextCamera = getCamera(patch.cameraId ?? shot.cameraId);
-      const nextFilm = getFilm(patch.filmId ?? shot.filmId);
-      const next = { ...shot, ...patch };
-      const decoded = decodeRaw(new Uint8Array(shot.raw));
-      const optics = applyCamera(
-        rawToFloat(decoded.image),
-        framedProfile(nextCamera.profile, shot.portrait),
-        recipeEv(next.ev, nextFilm.iso, next),
-      );
-      const rgba = applyFilm(optics, nextFilm.profile, {
-        seed: shot.seed,
-        grainScale: next.iso == null ? 1 : isoGrainScale(next.iso, nextFilm.iso),
-      });
-      const turned = rotateRgba(rgba, optics.width, optics.height, shot.turn ?? 0);
-      const blob = await rgbaToBlob(turned.data, turned.width, turned.height);
-      const updated: Shot = {
-        ...next,
-        jpeg: await blob.arrayBuffer(),
-      };
-      await saveShot(updated);
-      onUpdate(updated);
+      let base = shot;
+      while (pending.current) {
+        const nextPatch = pending.current;
+        pending.current = null;
+        base = await renderShot(base, nextPatch);
+      }
+      await saveShot(base);
+      onUpdate(base);
     } finally {
       lock.current = false;
       setWorking(false);
+      if (pending.current) {
+        const leftover = pending.current;
+        pending.current = null;
+        void redevelop(leftover);
+      }
     }
   }
 
@@ -182,9 +186,21 @@ export function Review({ shot, onClose, onUpdate, onDelete }: Props) {
               iso={shot.iso}
               shutter={shot.shutter}
               aperture={shot.aperture}
-              onIso={(delta) => void redevelop({ iso: stepIso(shot.iso ?? film.iso, delta) })}
-              onShutter={(delta) => void redevelop({ shutter: stepShutter(shot.shutter ?? 1 / 125, -delta) })}
-              onAperture={(delta) => void redevelop({ aperture: stepAperture(shot.aperture ?? 4, -delta) })}
+              onIso={(delta) => {
+                const iso = stepIso(dialLive.current.iso, delta);
+                dialLive.current = { ...dialLive.current, iso };
+                void redevelop({ iso });
+              }}
+              onShutter={(delta) => {
+                const shutter = stepShutter(dialLive.current.shutter, -delta);
+                dialLive.current = { ...dialLive.current, shutter };
+                void redevelop({ shutter });
+              }}
+              onAperture={(delta) => {
+                const aperture = stepAperture(dialLive.current.aperture, -delta);
+                dialLive.current = { ...dialLive.current, aperture };
+                void redevelop({ aperture });
+              }}
             />
           </>
         ) : null}
@@ -209,6 +225,28 @@ export function Review({ shot, onClose, onUpdate, onDelete }: Props) {
       </div>
     </section>
   );
+}
+
+async function renderShot(
+  base: Shot,
+  patch: Partial<Pick<Shot, "cameraId" | "filmId" | "ev" | "iso" | "shutter" | "aperture">>,
+) {
+  const nextCamera = getCamera(patch.cameraId ?? base.cameraId);
+  const nextFilm = getFilm(patch.filmId ?? base.filmId);
+  const next = { ...base, ...patch };
+  const decoded = decodeRaw(new Uint8Array(base.raw));
+  const optics = applyCamera(
+    rawToFloat(decoded.image),
+    framedProfile(nextCamera.profile, base.portrait),
+    recipeEv(next.ev, nextFilm.iso, next),
+  );
+  const rgba = applyFilm(optics, nextFilm.profile, {
+    seed: base.seed,
+    grainScale: next.iso == null ? 1 : isoGrainScale(next.iso, nextFilm.iso),
+  });
+  const turned = rotateRgba(rgba, optics.width, optics.height, base.turn ?? 0);
+  const blob = await rgbaToBlob(turned.data, turned.width, turned.height);
+  return { ...next, jpeg: await blob.arrayBuffer() };
 }
 
 function exposureNote(shot: Shot) {

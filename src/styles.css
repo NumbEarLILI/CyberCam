@@ -223,19 +223,75 @@ em { font-style: normal; color: var(--muted); }
 }
 .meter .chip + .chip { box-shadow: inset 1px 0 0 rgba(244, 240, 231, 0.16); }
 .meter .meta {
-  padding-left: 4px;
+  padding-left: 0;
   font-size: 9px;
   letter-spacing: 0.02em;
+  text-align: center;
 }
+.dial {
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  min-height: 46px;
+  padding: 3px 2px 4px;
+  touch-action: none;
+  user-select: none;
+  cursor: ew-resize;
+}
+.dial-window {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  height: 22px;
+}
+.dial-window::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(90deg, rgba(12, 12, 11, 0.72), transparent 24%, transparent 76%, rgba(12, 12, 11, 0.72));
+}
+.dial-window::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  left: 50%;
+  bottom: 0;
+  width: 10px;
+  height: 2px;
+  border-radius: 999px;
+  background: rgba(244, 240, 231, 0.8);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.dial-tape {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: flex;
+  align-items: center;
+  width: max-content;
+  height: max-content;
+}
+.dial-tape span {
+  flex: none;
+  width: 52px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0.38;
+  white-space: nowrap;
+}
+.dial-tape .is-current {
+  opacity: 1;
+  font-size: 13px;
+}
+.dial-tape .is-empty { opacity: 0; }
 .meter .ev-chip button {
   width: 28px;
   height: 32px;
-}
-.meter .ev-chip .dial-value {
-  min-width: 3.5em;
-  white-space: nowrap;
-  font-size: 12px;
-  line-height: 1;
 }
 .dock {
   position: relative;
@@ -442,6 +498,33 @@ em { font-style: normal; color: var(--muted); }
 }
 .app[data-hold="left"] .meter .chip,
 .app[data-hold="right"] .meter .chip { flex: 0 0 auto; }
+.app[data-hold="left"] .dial,
+.app[data-hold="right"] .dial {
+  width: 58px;
+  min-height: 112px;
+}
+.app[data-hold="left"] .dial-window,
+.app[data-hold="right"] .dial-window {
+  height: 84px;
+}
+.app[data-hold="left"] .dial-window::before,
+.app[data-hold="right"] .dial-window::before {
+  background: linear-gradient(to bottom, rgba(12, 12, 11, 0.72), transparent 22%, transparent 78%, rgba(12, 12, 11, 0.72));
+}
+.app[data-hold="left"] .dial-window::after,
+.app[data-hold="right"] .dial-window::after {
+  top: 50%;
+  bottom: auto;
+  left: 0;
+  width: 2px;
+  height: 10px;
+  transform: translateY(-50%);
+}
+.app[data-hold="left"] .dial-tape span,
+.app[data-hold="right"] .dial-tape span {
+  width: 22px;
+  height: 52px;
+}
 .app[data-hold="left"] .chip strong,
 .app[data-hold="right"] .chip strong {
   max-width: none;
