@@ -5,9 +5,10 @@ import { Review } from "./components/Review";
 import { Sheets } from "./components/Sheets";
 import { getCamera } from "./data/cameras";
 import { getFilm } from "./data/films";
-import { copyBytes, fitSize, readSource, rgbaToBlob, toImageData } from "./lib/bitmap";
+import { copyBytes, fitSize, readSource, rgbaToBlob } from "./lib/bitmap";
 import { deleteShot, loadShots, saveShot, type Shot } from "./lib/db";
 import { applyCamera, applyFilm, rawToFloat } from "./lib/develop";
+import { createFinder } from "./lib/finder";
 import { encodeRaw, rgba8ToRaw } from "./lib/raw";
 import { drawBenchScene } from "./lib/scene";
 
@@ -34,6 +35,16 @@ export function App() {
   const fileRef = useRef<HTMLInputElement>(null);
   const busy = useRef(false);
   const [frame, setFrame] = useState({ width: 0, height: 0 });
+  const sensorEpoch = useRef(0);
+  const finderState = useRef({
+    source,
+    cameraId,
+    filmId,
+    ev,
+    mirror,
+    frame,
+  });
+  finderState.current = { source, cameraId, filmId, ev, mirror, frame };
 
   const camera = getCamera(cameraId);
   const film = getFilm(filmId);
@@ -70,6 +81,7 @@ export function App() {
     canvas.height = 800;
     const ctx = canvas.getContext("2d");
     if (ctx) drawBenchScene(ctx, canvas.width, canvas.height);
+    sensorEpoch.current += 1;
   }, [source]);
 
   useEffect(() => {
@@ -120,33 +132,62 @@ export function App() {
 
   useEffect(() => {
     if (view !== "camera") return;
+    const preview = previewRef.current;
+    if (!preview) return;
+    const finder = createFinder(preview);
     let stop = false;
-    const loop = async () => {
-      while (!stop) {
-        if (!busy.current) {
-          try {
-            const image = grab(320);
-            const preview = previewRef.current;
-            if (image && preview) {
-              const raw = rgba8ToRaw(image.data, image.width, image.height);
-              const optics = applyCamera(rawToFloat(raw), getCamera(cameraId).profile, ev);
-              const rgba = applyFilm(optics, getFilm(filmId).profile, { grain: false });
-              preview.width = optics.width;
-              preview.height = optics.height;
-              preview.getContext("2d")?.putImageData(toImageData(rgba, optics.width, optics.height), 0, 0);
-            }
-          } catch {
-            // Live preview is opportunistic. The shutter still writes a full RAW.
+    let raf = 0;
+    let signature = "";
+    let lastLiveDraw = 0;
+    const loop = () => {
+      if (stop) return;
+      try {
+        if (busy.current || document.hidden) return;
+        const state = finderState.current;
+        if (state.frame.width < 2 || state.frame.height < 2) return;
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        const bufferW = Math.max(2, Math.round(state.frame.width * dpr));
+        const bufferH = Math.max(2, Math.round(state.frame.height * dpr));
+        const live = state.source === "live";
+        const mark = `${state.source}|${state.cameraId}|${state.filmId}|${state.ev}|${state.mirror}|${bufferW}|${bufferH}|${sensorEpoch.current}`;
+        if (!live && mark === signature) return;
+        const grade = {
+          camera: getCamera(state.cameraId).profile,
+          film: getFilm(state.filmId).profile,
+          ev: state.ev,
+          mirror: live && state.mirror,
+        };
+        let drew = false;
+        if (live) {
+          const video = videoRef.current;
+          if (video && video.readyState >= 2 && video.videoWidth > 0) {
+            drew = finder.draw(video, video.videoWidth, video.videoHeight, bufferW, bufferH, grade);
+          }
+        } else {
+          const sensor = sensorRef.current;
+          if (sensor && sensor.width > 1 && sensor.height > 1) {
+            drew = finder.draw(sensor, sensor.width, sensor.height, bufferW, bufferH, grade);
           }
         }
-        await sleep(180);
+        if (drew) {
+          signature = mark;
+          if (live) {
+            const now = performance.now();
+            if (lastLiveDraw > 0) finder.noteFrame(now - lastLiveDraw);
+            lastLiveDraw = now;
+          }
+        }
+      } finally {
+        if (!stop) raf = requestAnimationFrame(loop);
       }
     };
-    void loop();
+    raf = requestAnimationFrame(loop);
     return () => {
       stop = true;
+      cancelAnimationFrame(raf);
+      finder.destroy();
     };
-  }, [cameraId, ev, filmId, grab, view]);
+  }, [view]);
 
   const shoot = useCallback(async () => {
     if (busy.current || view !== "camera" || picker) return;
@@ -229,6 +270,7 @@ export function App() {
     canvas.width = size.width;
     canvas.height = size.height;
     canvas.getContext("2d")?.drawImage(img, 0, 0, size.width, size.height);
+    sensorEpoch.current += 1;
     setSource("import");
   }
 
