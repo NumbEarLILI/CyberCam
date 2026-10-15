@@ -1,0 +1,425 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { CameraArt, FilmArt } from "./components/art";
+import { Gallery } from "./components/Gallery";
+import { Review } from "./components/Review";
+import { Sheets } from "./components/Sheets";
+import { getCamera } from "./data/cameras";
+import { getFilm } from "./data/films";
+import { copyBytes, fitSize, readSource, rgbaToBlob, toImageData } from "./lib/bitmap";
+import { deleteShot, loadShots, saveShot, type Shot } from "./lib/db";
+import { applyCamera, applyFilm, rawToFloat } from "./lib/develop";
+import { encodeRaw, rgba8ToRaw } from "./lib/raw";
+import { drawBenchScene } from "./lib/scene";
+
+type Source = "live" | "scene" | "import";
+type Phase = "raw" | "optics" | "film";
+
+export function App() {
+  const [cameraId, setCameraId] = useState("leica-m6");
+  const [filmId, setFilmId] = useState("portra-400");
+  const [ev, setEv] = useState(0);
+  const [source, setSource] = useState<Source>("scene");
+  const [mirror, setMirror] = useState(false);
+  const [picker, setPicker] = useState<"camera" | "film" | null>(null);
+  const [view, setView] = useState<"camera" | "gallery" | "review">("camera");
+  const [shots, setShots] = useState<Shot[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [phase, setPhase] = useState<Phase | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [flash, setFlash] = useState(false);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const sensorRef = useRef<HTMLCanvasElement>(null);
+  const previewRef = useRef<HTMLCanvasElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const busy = useRef(false);
+  const [frame, setFrame] = useState({ width: 0, height: 0 });
+
+  const camera = getCamera(cameraId);
+  const film = getFilm(filmId);
+  const active = shots.find((shot) => shot.id === activeId) ?? null;
+
+  useEffect(() => {
+    loadShots().then(setShots).catch(() => setMessage("相册暂时读不出来，这次拍摄仍会留在本次会话里。"));
+  }, []);
+
+  useEffect(() => {
+    const element = stageRef.current;
+    if (!element) return;
+    const measure = () => {
+      const style = getComputedStyle(element);
+      const padX = Number.parseFloat(style.paddingLeft) + Number.parseFloat(style.paddingRight);
+      const padY = Number.parseFloat(style.paddingTop) + Number.parseFloat(style.paddingBottom);
+      const width = Math.max(0, element.clientWidth - padX);
+      const height = Math.max(0, element.clientHeight - padY);
+      const byHeight = height * camera.profile.aspect;
+      if (byHeight <= width) setFrame({ width: byHeight, height });
+      else setFrame({ width, height: width / camera.profile.aspect });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [camera.profile.aspect, view]);
+
+  useEffect(() => {
+    if (source !== "scene") return;
+    const canvas = sensorRef.current;
+    if (!canvas) return;
+    canvas.width = 1200;
+    canvas.height = 800;
+    const ctx = canvas.getContext("2d");
+    if (ctx) drawBenchScene(ctx, canvas.width, canvas.height);
+  }, [source]);
+
+  useEffect(() => {
+    if (source !== "live") return;
+    let stream: MediaStream | null = null;
+    let cancelled = false;
+    navigator.mediaDevices
+      .getUserMedia({
+        audio: false,
+        video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+      })
+      .then(async (next) => {
+        if (cancelled) {
+          next.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        stream = next;
+        const video = videoRef.current;
+        if (!video) return;
+        video.srcObject = next;
+        await video.play();
+        const facing = next.getVideoTracks()[0]?.getSettings().facingMode;
+        setMirror(facing !== "environment");
+      })
+      .catch(() => {
+        setMessage("没有打开相机。可以先用试拍场景看不同胶卷的差别。");
+        setSource("scene");
+      });
+    return () => {
+      cancelled = true;
+      stream?.getTracks().forEach((track) => track.stop());
+    };
+  }, [source]);
+
+  const grab = useCallback(
+    (maxEdge: number) => {
+      if (source === "live") {
+        const video = videoRef.current;
+        if (!video || video.videoWidth === 0) return null;
+        return readSource(video, video.videoWidth, video.videoHeight, mirror, maxEdge);
+      }
+      const sensor = sensorRef.current;
+      if (!sensor || sensor.width === 0) return null;
+      return readSource(sensor, sensor.width, sensor.height, false, maxEdge);
+    },
+    [mirror, source],
+  );
+
+  useEffect(() => {
+    if (view !== "camera") return;
+    let stop = false;
+    const loop = async () => {
+      while (!stop) {
+        if (!busy.current) {
+          try {
+            const image = grab(320);
+            const preview = previewRef.current;
+            if (image && preview) {
+              const raw = rgba8ToRaw(image.data, image.width, image.height);
+              const optics = applyCamera(rawToFloat(raw), getCamera(cameraId).profile, ev);
+              const rgba = applyFilm(optics, getFilm(filmId).profile, { grain: false });
+              preview.width = optics.width;
+              preview.height = optics.height;
+              preview.getContext("2d")?.putImageData(toImageData(rgba, optics.width, optics.height), 0, 0);
+            }
+          } catch {
+            // Live preview is opportunistic. The shutter still writes a full RAW.
+          }
+        }
+        await sleep(180);
+      }
+    };
+    void loop();
+    return () => {
+      stop = true;
+    };
+  }, [cameraId, ev, filmId, grab, view]);
+
+  const shoot = useCallback(async () => {
+    if (busy.current || view !== "camera" || picker) return;
+    const image = grab(1400);
+    if (!image) {
+      setMessage("画面还没准备好。");
+      return;
+    }
+    busy.current = true;
+    setFlash(true);
+    window.setTimeout(() => setFlash(false), 180);
+    navigator.vibrate?.(12);
+    try {
+      const body = getCamera(cameraId);
+      const stock = getFilm(filmId);
+      const seed = Math.floor(Math.random() * 1_000_000_000);
+      setPhase("raw");
+      await paint();
+      const rawImage = rgba8ToRaw(image.data, image.width, image.height);
+      const rawBytes = encodeRaw(rawImage, { capturedAt: new Date().toISOString() });
+      await sleep(420);
+      setPhase("optics");
+      await paint();
+      const optics = applyCamera(rawToFloat(rawImage), body.profile, ev);
+      await sleep(420);
+      setPhase("film");
+      await paint();
+      const started = performance.now();
+      const rgba = applyFilm(optics, stock.profile, { seed });
+      const jpeg = await rgbaToBlob(rgba, optics.width, optics.height);
+      const shot: Shot = {
+        id: crypto.randomUUID(),
+        createdAt: new Date().toISOString(),
+        cameraId,
+        filmId,
+        ev,
+        seed,
+        raw: copyBytes(rawBytes),
+        jpeg: await jpeg.arrayBuffer(),
+      };
+      const elapsed = performance.now() - started;
+      if (elapsed < 420) await sleep(420 - elapsed);
+      try {
+        await saveShot(shot);
+      } catch {
+        setMessage("RAW 已经显影，但没能写进本地相册。");
+      }
+      setShots((current) => [shot, ...current.filter((item) => item.id !== shot.id)]);
+      setActiveId(shot.id);
+      setView("review");
+    } catch {
+      setMessage("这张没有写完。再按一次快门。");
+    } finally {
+      setPhase(null);
+      busy.current = false;
+    }
+  }, [cameraId, ev, filmId, grab, picker, view]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.code !== "Space" || view !== "camera") return;
+      event.preventDefault();
+      void shoot();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [shoot, view]);
+
+  useEffect(() => {
+    if (!message) return;
+    const timer = window.setTimeout(() => setMessage(null), 3600);
+    return () => window.clearTimeout(timer);
+  }, [message]);
+
+  async function importFile(file: File) {
+    const img = await loadImage(file);
+    const canvas = sensorRef.current;
+    if (!canvas) return;
+    const size = fitSize(img.naturalWidth, img.naturalHeight, 1600);
+    canvas.width = size.width;
+    canvas.height = size.height;
+    canvas.getContext("2d")?.drawImage(img, 0, 0, size.width, size.height);
+    setSource("import");
+  }
+
+  async function removeShot(id: string) {
+    setShots((current) => current.filter((shot) => shot.id !== id));
+    setActiveId(null);
+    setView("gallery");
+    try {
+      await deleteShot(id);
+    } catch {
+      setMessage("本地相册里的这张可能还在。");
+    }
+  }
+
+  return (
+    <div className="app">
+      <div className={view === "camera" ? "camera-shell" : "camera-shell hidden"}>
+          <header className="top">
+            <div className="brand">
+              <strong>CyberCam</strong>
+              <span>先写 RAW，再显影</span>
+            </div>
+            <div className="pickers">
+              <button type="button" className="picker-card" onClick={() => setPicker("camera")}>
+                <span className="art-slot">
+                  <CameraArt id={camera.id} />
+                </span>
+                <span>
+                  <span className="meta">机身 · {camera.format}</span>
+                  <strong>{camera.name}</strong>
+                </span>
+              </button>
+              <button type="button" className="picker-card" onClick={() => setPicker("film")}>
+                <span className="art-slot film">
+                  <FilmArt id={film.id} />
+                </span>
+                <span>
+                  <span className="meta">胶卷 · ISO {film.iso}</span>
+                  <strong>{film.name}</strong>
+                </span>
+              </button>
+            </div>
+          </header>
+
+          <div className="stage" ref={stageRef}>
+            <div className="frame" style={{ width: frame.width, height: frame.height }}>
+              <video ref={videoRef} className={source === "live" ? `fill ${mirror ? "mirror" : ""}` : "sensor-hidden"} playsInline muted autoPlay />
+              <canvas ref={sensorRef} className={source === "live" ? "sensor-hidden" : "fill"} />
+              <canvas ref={previewRef} className="fill preview" />
+              <div className="thirds" />
+              {flash ? <div className="flash" /> : null}
+            </div>
+          </div>
+
+          <footer className="dock">
+            <p className="recipe">
+              取景已套上 {camera.name} + {film.name}。快门仍先保存未调色的线性 RAW。
+            </p>
+            <div className="controls">
+              <button type="button" className="dock-btn" onClick={() => setView("gallery")}>
+                <span className="count">{shots.length}</span>
+                相册
+              </button>
+              <button type="button" className="shutter" aria-label="快门" onClick={() => void shoot()} disabled={phase !== null} />
+              <div className="ev">
+                <button type="button" onClick={() => setEv((value) => clampEv(value - 0.5))} aria-label="降低曝光">
+                  −
+                </button>
+                <span>{formatEv(ev)}</span>
+                <button type="button" onClick={() => setEv((value) => clampEv(value + 0.5))} aria-label="提高曝光">
+                  +
+                </button>
+              </div>
+            </div>
+            <div className="sources">
+              <button type="button" className={source === "live" ? "on" : ""} onClick={() => setSource("live")}>
+                相机
+              </button>
+              <button type="button" className={source === "scene" ? "on" : ""} onClick={() => setSource("scene")}>
+                试拍场景
+              </button>
+              <button type="button" className={source === "import" ? "on" : ""} onClick={() => fileRef.current?.click()}>
+                导入照片
+              </button>
+            </div>
+          </footer>
+          <input
+            ref={fileRef}
+            className="sensor-hidden"
+            type="file"
+            accept="image/*"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (file) void importFile(file).catch(() => setMessage("这张照片读不了。"));
+            }}
+          />
+      </div>
+
+      {view === "gallery" ? (
+        <Gallery
+          shots={shots}
+          onBack={() => setView("camera")}
+          onOpen={(id) => {
+            setActiveId(id);
+            setView("review");
+          }}
+        />
+      ) : null}
+
+      {view === "review" && active ? (
+        <Review
+          shot={active}
+          onClose={() => setView("camera")}
+          onUpdate={(shot) => setShots((current) => current.map((item) => (item.id === shot.id ? shot : item)))}
+          onDelete={(id) => void removeShot(id)}
+        />
+      ) : null}
+
+      <Sheets
+        picker={picker}
+        cameraId={cameraId}
+        filmId={filmId}
+        onClose={() => setPicker(null)}
+        onPickCamera={(id) => {
+          setCameraId(id);
+          setPicker(null);
+        }}
+        onPickFilm={(id) => {
+          setFilmId(id);
+          setPicker(null);
+        }}
+      />
+
+      {phase ? (
+        <div className="develop-modal" role="status">
+          <p className="eyebrow">显影</p>
+          <h2>{phase === "raw" ? "正在写入 RAW" : phase === "optics" ? "套用机身光学" : "胶卷上色"}</h2>
+          <ol className="steps">
+            <li data-state={stepState(phase, "raw")}>线性 RAW · 16-bit RGB</li>
+            <li data-state={stepState(phase, "optics")}>{camera.name} · 暗角、锐度、画幅</li>
+            <li data-state={stepState(phase, "film")}>{film.name} · 色彩与颗粒</li>
+          </ol>
+        </div>
+      ) : null}
+
+      {message ? <p className="toast">{message}</p> : null}
+    </div>
+  );
+}
+
+function stepState(phase: Phase, step: Phase) {
+  const order: Phase[] = ["raw", "optics", "film"];
+  const current = order.indexOf(phase);
+  const mine = order.indexOf(step);
+  if (mine < current) return "done";
+  if (mine === current) return "now";
+  return "wait";
+}
+
+function clampEv(value: number) {
+  return Math.max(-2, Math.min(2, Math.round(value * 10) / 10));
+}
+
+function formatEv(value: number) {
+  const text = value.toFixed(1);
+  return value > 0 ? `+${text}` : text;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function paint() {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve(null)));
+  });
+}
+
+function loadImage(file: File) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("无法读取照片"));
+    };
+    image.src = url;
+  });
+}
