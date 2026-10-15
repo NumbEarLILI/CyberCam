@@ -478,16 +478,18 @@ em { font-style: normal; color: var(--muted); }
   .frame { border-radius: 16px; }
 }
 
-/* Same chrome in every orientation. Only the setting text turns with the phone. */
+/* Same chrome in every orientation. Only the setting text turns with the phone.
+   Left side up faces the glyphs toward the left edge and reads upward.
+   Right side up faces them toward the right edge and reads downward. */
 .app[data-hold="left"] .hud,
 .app[data-hold="right"] .hud { align-items: flex-start; }
 .app[data-hold="left"] .hud .chip,
-.app[data-hold="left"] .meter .chip {
+.app[data-hold="left"] .meter .chip { writing-mode: sideways-lr; }
+.app[data-hold="right"] .hud .chip,
+.app[data-hold="right"] .meter .chip {
   writing-mode: vertical-rl;
   text-orientation: sideways;
 }
-.app[data-hold="right"] .hud .chip,
-.app[data-hold="right"] .meter .chip { writing-mode: sideways-lr; }
 .app[data-hold="left"] .frame .meter,
 .app[data-hold="right"] .frame .meter {
   left: 50%;
@@ -540,11 +542,11 @@ em { font-style: normal; color: var(--muted); }
   min-width: 0;
   min-height: 1.2em;
 }
-.app[data-hold="left"] .zoom-bar span {
+.app[data-hold="left"] .zoom-bar span { writing-mode: sideways-lr; }
+.app[data-hold="right"] .zoom-bar span {
   writing-mode: vertical-rl;
   text-orientation: sideways;
 }
-.app[data-hold="right"] .zoom-bar span { writing-mode: sideways-lr; }
 .app[data-hold="left"] .zoom-bar button { transform: rotate(-90deg); }
 .app[data-hold="right"] .zoom-bar button { transform: rotate(90deg); }
 .app[data-hold="upside"] .hud .chip,
