@@ -192,12 +192,18 @@ em { font-style: normal; color: var(--muted); }
   width: max-content;
   max-width: 100%;
   margin: 0 auto;
-  gap: 0;
-  padding: 0 2px;
-  border-radius: 999px;
-  background: rgba(12, 12, 11, 0.62);
-  border: 1px solid rgba(244, 240, 231, 0.18);
-  backdrop-filter: blur(12px);
+  gap: 3px;
+  padding: 4px;
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 248, 236, 0.12), transparent 46%),
+    #141311;
+  border: 1px solid rgba(244, 240, 231, 0.2);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 248, 236, 0.2),
+    inset 0 -10px 16px rgba(0, 0, 0, 0.28),
+    0 10px 22px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(16px);
 }
 .frame .meter {
   position: absolute;
@@ -208,6 +214,25 @@ em { font-style: normal; color: var(--muted); }
   width: auto;
   pointer-events: none;
 }
+.frame .dial-window { height: 28px; }
+.frame .dial-window::before {
+  background: linear-gradient(
+    90deg,
+    #100f0d 0%,
+    rgba(16, 15, 13, 0.96) 14%,
+    rgba(16, 15, 13, 0.62) 26%,
+    transparent 38%,
+    transparent 62%,
+    rgba(16, 15, 13, 0.62) 74%,
+    rgba(16, 15, 13, 0.96) 86%,
+    #100f0d 100%
+  );
+}
+.frame .dial-window::after { width: 54px; }
+.frame .dial-tape span::after { display: none; }
+.frame .dial-tape .is-prev,
+.frame .dial-tape .is-next { color: rgba(203, 191, 168, 0.34); }
+.frame .dial-tape .is-current { font-size: 14px; }
 .meter .chip {
   pointer-events: auto;
   flex: 1 1 0;
@@ -221,18 +246,19 @@ em { font-style: normal; color: var(--muted); }
   border-radius: 0;
   backdrop-filter: none;
 }
-.meter .chip + .chip { box-shadow: inset 1px 0 0 rgba(244, 240, 231, 0.16); }
+.meter .chip + .chip { box-shadow: none; }
 .meter .meta {
   padding-left: 0;
   font-size: 9px;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.14em;
   text-align: center;
+  color: #cbbfa8;
 }
 .dial {
   flex-direction: column;
   justify-content: center;
-  gap: 1px;
-  min-height: 46px;
+  gap: 3px;
+  min-height: 52px;
   padding: 3px 2px 4px;
   touch-action: none;
   user-select: none;
@@ -242,7 +268,16 @@ em { font-style: normal; color: var(--muted); }
   position: relative;
   overflow: hidden;
   width: 100%;
-  height: 22px;
+  height: 30px;
+  border-radius: 9px;
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 244, 220, 0.055) 0 1px, transparent 1px 3px),
+    linear-gradient(180deg, #1c1916 0%, #2a261f 42%, #12110f 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 236, 210, 0.28),
+    inset 0 3px 7px rgba(0, 0, 0, 0.72),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(230, 211, 174, 0.16);
 }
 .dial-window::before {
   content: "";
@@ -250,19 +285,33 @@ em { font-style: normal; color: var(--muted); }
   inset: 0;
   z-index: 1;
   pointer-events: none;
-  background: linear-gradient(90deg, rgba(12, 12, 11, 0.72), transparent 24%, transparent 76%, rgba(12, 12, 11, 0.72));
+  background: linear-gradient(90deg, rgba(16, 15, 13, 0.94), transparent 18%, transparent 82%, rgba(16, 15, 13, 0.94));
 }
 .dial-window::after {
   content: "";
   position: absolute;
   z-index: 1;
   left: 50%;
-  bottom: 0;
-  width: 10px;
-  height: 2px;
-  border-radius: 999px;
-  background: rgba(244, 240, 231, 0.8);
+  top: 3px;
+  bottom: 3px;
+  width: 48px;
   transform: translateX(-50%);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(255, 244, 220, 0.1), rgba(255, 244, 220, 0.02));
+  box-shadow: inset 0 0 0 1px rgba(230, 211, 174, 0.2);
+  pointer-events: none;
+}
+.dial-index {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  top: 1px;
+  width: 8px;
+  height: 5px;
+  transform: translateX(-50%);
+  background: #e6d3ae;
+  clip-path: polygon(50% 100%, 0 0, 100% 0);
+  filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.45));
   pointer-events: none;
 }
 .dial-tape {
@@ -273,7 +322,9 @@ em { font-style: normal; color: var(--muted); }
   align-items: center;
   width: max-content;
   height: max-content;
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
+.dial.is-dragging .dial-tape { transition: none; }
 .dial-tape span {
   flex: none;
   width: 52px;
@@ -281,14 +332,30 @@ em { font-style: normal; color: var(--muted); }
   font-variant-numeric: tabular-nums;
   font-size: 11px;
   line-height: 1;
-  opacity: 0.38;
+  color: rgba(203, 191, 168, 0.5);
   white-space: nowrap;
 }
-.dial-tape .is-current {
-  opacity: 1;
-  font-size: 13px;
+.dial-tape span::after {
+  content: "";
+  display: block;
+  width: 1px;
+  height: 4px;
+  margin: 3px auto 0;
+  background: rgba(230, 211, 174, 0.4);
 }
-.dial-tape .is-empty { opacity: 0; }
+.dial-tape .is-current {
+  font-family: Fraunces, Palatino, "Songti SC", serif;
+  font-weight: 560;
+  font-size: 15px;
+  color: #f7f1e6;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.55);
+}
+.dial-tape .is-current::after {
+  height: 6px;
+  background: #e6d3ae;
+}
+.dial-tape .is-empty { color: transparent; }
+.dial-tape .is-empty::after { opacity: 0; }
 .meter .ev-chip button {
   width: 28px;
   height: 32px;
@@ -447,36 +514,41 @@ em { font-style: normal; color: var(--muted); }
   width: 100%;
   flex-direction: column;
   align-items: stretch;
-  border-radius: 20px;
-  padding: 2px 0;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
 }
-.respool .meter .chip + .chip { box-shadow: inset 0 1px 0 rgba(244, 240, 231, 0.16); }
 .respool .dial {
   flex: none;
   flex-direction: row;
   align-items: center;
   justify-content: flex-start;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
   min-width: 0;
-  min-height: 52px;
-  padding: 6px 14px;
+  min-height: 58px;
+  padding: 0;
 }
 .respool .dial .meta {
   flex: none;
-  width: 2.6em;
+  width: 2.8em;
   font-size: 12px;
   text-align: left;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.12em;
 }
 .respool .dial-window {
   flex: 1 1 auto;
   width: auto;
   min-width: 0;
-  height: 32px;
+  height: 44px;
+  border-radius: 12px;
 }
 .respool .dial-tape span { font-size: 13px; }
-.respool .dial-tape .is-current { font-size: 16px; }
+.respool .dial-tape .is-current { font-size: 20px; }
 .scroll { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; }
 .mini {
   min-width: 92px;
@@ -567,20 +639,51 @@ em { font-style: normal; color: var(--muted); }
 .app[data-hold="left"] .frame .dial-window,
 .app[data-hold="right"] .frame .dial-window {
   height: 84px;
+  background:
+    repeating-linear-gradient(180deg, rgba(255, 244, 220, 0.05) 0 1px, transparent 1px 3px),
+    linear-gradient(90deg, #12110f 0%, #2c2823 48%, #161412 100%);
 }
 .app[data-hold="left"] .frame .dial-window::before,
 .app[data-hold="right"] .frame .dial-window::before {
-  background: linear-gradient(to bottom, rgba(12, 12, 11, 0.72), transparent 22%, transparent 78%, rgba(12, 12, 11, 0.72));
+  background: linear-gradient(
+    to bottom,
+    #100f0d 0%,
+    rgba(16, 15, 13, 0.94) 16%,
+    transparent 34%,
+    transparent 66%,
+    rgba(16, 15, 13, 0.94) 84%,
+    #100f0d 100%
+  );
 }
 .app[data-hold="left"] .frame .dial-window::after,
 .app[data-hold="right"] .frame .dial-window::after {
   top: 50%;
   bottom: auto;
-  left: 0;
-  width: 2px;
-  height: 10px;
+  left: 3px;
+  right: 3px;
+  width: auto;
+  height: 42px;
   transform: translateY(-50%);
 }
+.app[data-hold="left"] .frame .dial-index {
+  top: 50%;
+  left: 2px;
+  width: 5px;
+  height: 8px;
+  transform: translateY(-50%);
+  clip-path: polygon(100% 50%, 0 0, 0 100%);
+}
+.app[data-hold="right"] .frame .dial-index {
+  top: 50%;
+  left: auto;
+  right: 2px;
+  width: 5px;
+  height: 8px;
+  transform: translateY(-50%);
+  clip-path: polygon(0 50%, 100% 0, 100% 100%);
+}
+.app[data-hold="left"] .frame .dial-tape span::after,
+.app[data-hold="right"] .frame .dial-tape span::after { display: none; }
 .app[data-hold="left"] .frame .dial-tape span,
 .app[data-hold="right"] .frame .dial-tape span {
   width: 22px;
@@ -621,4 +724,5 @@ em { font-style: normal; color: var(--muted); }
   .review-frame.is-developing .review-stack img.is-current { animation: none; }
   .review-stack img.is-arriving { opacity: 1; }
   .review-stack img.is-leaving { opacity: 0; }
+  .dial-tape { transition: none; }
 }

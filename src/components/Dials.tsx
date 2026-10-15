@@ -44,6 +44,7 @@ function Dial({
   const drag = useRef({ pointer: -1, x: 0, y: 0, axisX: 1, axisY: 0, carry: 0, index });
   const [preview, setPreview] = useState<number | null>(null);
   const [nudge, setNudge] = useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
   const shown = preview ?? index;
 
   useEffect(() => {
@@ -79,6 +80,7 @@ function Dial({
     event.currentTarget.setPointerCapture(event.pointerId);
     const axis = dialAxis(event.currentTarget);
     drag.current = { pointer: event.pointerId, x: event.clientX, y: event.clientY, ...axis, carry: 0, index: shown };
+    setDragging(true);
   }
 
   function onPointerMove(event: React.PointerEvent<HTMLDivElement>) {
@@ -95,6 +97,7 @@ function Dial({
     if (drag.current.pointer !== event.pointerId) return;
     drag.current.pointer = -1;
     drag.current.carry = 0;
+    setDragging(false);
     setPreview(drag.current.index);
     setNudge({ x: 0, y: 0 });
   }
@@ -114,7 +117,7 @@ function Dial({
   return (
     <div
       ref={rootRef}
-      className="chip dial"
+      className={dragging ? "chip dial is-dragging" : "chip dial"}
       role="slider"
       tabIndex={0}
       aria-label={`${label}，左右滑动调整`}
@@ -130,6 +133,7 @@ function Dial({
     >
       <span className="meta">{label}</span>
       <div className="dial-window">
+        <i className="dial-index" aria-hidden="true" />
         <div
           ref={tapeRef}
           className="dial-tape"
