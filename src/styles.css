@@ -443,6 +443,40 @@ em { font-style: normal; color: var(--muted); }
 .pipe i { width: 18px; height: 1px; background: var(--line); display: block; }
 .pipe .on { color: var(--paper); }
 .respool p { margin: 8px 0; color: var(--muted); font-size: 13px; }
+.respool .meter {
+  width: 100%;
+  flex-direction: column;
+  align-items: stretch;
+  border-radius: 20px;
+  padding: 2px 0;
+}
+.respool .meter .chip + .chip { box-shadow: inset 0 1px 0 rgba(244, 240, 231, 0.16); }
+.respool .dial {
+  flex: none;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  min-height: 52px;
+  padding: 6px 14px;
+}
+.respool .dial .meta {
+  flex: none;
+  width: 2.6em;
+  font-size: 12px;
+  text-align: left;
+  letter-spacing: 0.04em;
+}
+.respool .dial-window {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  height: 32px;
+}
+.respool .dial-tape span { font-size: 13px; }
+.respool .dial-tape .is-current { font-size: 16px; }
 .scroll { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; }
 .mini {
   min-width: 92px;
@@ -509,9 +543,9 @@ em { font-style: normal; color: var(--muted); }
 .app[data-hold="left"] .hud,
 .app[data-hold="right"] .hud { align-items: flex-start; }
 .app[data-hold="left"] .hud .chip,
-.app[data-hold="left"] .meter .chip { writing-mode: sideways-lr; }
+.app[data-hold="left"] .frame .meter .chip { writing-mode: sideways-lr; }
 .app[data-hold="right"] .hud .chip,
-.app[data-hold="right"] .meter .chip {
+.app[data-hold="right"] .frame .meter .chip {
   writing-mode: vertical-rl;
   text-orientation: sideways;
 }
@@ -523,23 +557,23 @@ em { font-style: normal; color: var(--muted); }
   max-width: calc(100% - 20px);
   transform: translateX(-50%);
 }
-.app[data-hold="left"] .meter .chip,
-.app[data-hold="right"] .meter .chip { flex: 0 0 auto; }
-.app[data-hold="left"] .dial,
-.app[data-hold="right"] .dial {
+.app[data-hold="left"] .frame .meter .chip,
+.app[data-hold="right"] .frame .meter .chip { flex: 0 0 auto; }
+.app[data-hold="left"] .frame .dial,
+.app[data-hold="right"] .frame .dial {
   width: 58px;
   min-height: 112px;
 }
-.app[data-hold="left"] .dial-window,
-.app[data-hold="right"] .dial-window {
+.app[data-hold="left"] .frame .dial-window,
+.app[data-hold="right"] .frame .dial-window {
   height: 84px;
 }
-.app[data-hold="left"] .dial-window::before,
-.app[data-hold="right"] .dial-window::before {
+.app[data-hold="left"] .frame .dial-window::before,
+.app[data-hold="right"] .frame .dial-window::before {
   background: linear-gradient(to bottom, rgba(12, 12, 11, 0.72), transparent 22%, transparent 78%, rgba(12, 12, 11, 0.72));
 }
-.app[data-hold="left"] .dial-window::after,
-.app[data-hold="right"] .dial-window::after {
+.app[data-hold="left"] .frame .dial-window::after,
+.app[data-hold="right"] .frame .dial-window::after {
   top: 50%;
   bottom: auto;
   left: 0;
@@ -547,8 +581,8 @@ em { font-style: normal; color: var(--muted); }
   height: 10px;
   transform: translateY(-50%);
 }
-.app[data-hold="left"] .dial-tape span,
-.app[data-hold="right"] .dial-tape span {
+.app[data-hold="left"] .frame .dial-tape span,
+.app[data-hold="right"] .frame .dial-tape span {
   width: 22px;
   height: 52px;
 }
@@ -575,7 +609,7 @@ em { font-style: normal; color: var(--muted); }
 .app[data-hold="left"] .zoom-bar button { transform: rotate(-90deg); }
 .app[data-hold="right"] .zoom-bar button { transform: rotate(90deg); }
 .app[data-hold="upside"] .hud .chip,
-.app[data-hold="upside"] .meter .chip,
+.app[data-hold="upside"] .frame .meter .chip,
 .app[data-hold="upside"] .zoom-bar button,
 .app[data-hold="upside"] .zoom-bar span { transform: rotate(180deg); }
 
