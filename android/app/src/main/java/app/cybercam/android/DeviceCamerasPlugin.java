@@ -134,9 +134,10 @@ public class DeviceCamerasPlugin extends Plugin {
 
     private final CameraSession.Listener sessionListener = new CameraSession.Listener() {
         @Override
-        public void onFrame(byte[] jpeg) {
+        public void onFrame(byte[] jpeg, int rotation) {
             JSObject payload = new JSObject();
             payload.put("jpeg", Base64.encodeToString(jpeg, Base64.NO_WRAP));
+            payload.put("rotation", rotation);
             notifyListeners("frame", payload);
         }
 

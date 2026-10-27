@@ -1,9 +1,6 @@
 package app.cybercam.android;
 
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.graphics.ImageFormat;
-import android.graphics.Matrix;
 import android.graphics.Rect;
 import android.graphics.YuvImage;
 import android.hardware.camera2.CameraAccessException;
@@ -28,7 +25,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 final class CameraSession {
     interface Listener {
-        void onFrame(byte[] jpeg);
+        void onFrame(byte[] jpeg, int rotation);
 
         void onReady();
 
@@ -51,6 +48,13 @@ final class CameraSession {
     private Listener listener;
     private int generation;
     private long lastPreview;
+    private static final long PREVIEW_INTERVAL_MS = 30;
+    private static final int PREVIEW_QUALITY = 88;
+    private static final int PREVIEW_LONG_EDGE = 1280;
+    private byte[] nv21;
+    private byte[] rowA;
+    private byte[] rowB;
+    private final ByteArrayOutputStream encoded = new ByteArrayOutputStream(256 * 1024);
     private final AtomicBoolean stillPending = new AtomicBoolean(false);
     private volatile int displayRotation = Surface.ROTATION_0;
 
@@ -153,8 +157,8 @@ final class CameraSession {
 
     private void configure(CameraDevice camera, CameraCatalog.Entry target, int ticket, boolean routePhysical) {
         try {
-            Size previewSize = CameraCatalog.choose(target.characteristics, ImageFormat.YUV_420_888, 1280);
             Size stillSize = CameraCatalog.chooseLargest(target.characteristics, ImageFormat.JPEG, 4096);
+            Size previewSize = CameraCatalog.chooseMatching(target.characteristics, ImageFormat.YUV_420_888, PREVIEW_LONG_EDGE, stillSize);
             previewReader = ImageReader.newInstance(previewSize.getWidth(), previewSize.getHeight(), ImageFormat.YUV_420_888, 2);
             stillReader = ImageReader.newInstance(stillSize.getWidth(), stillSize.getHeight(), ImageFormat.JPEG, 2);
             previewReader.setOnImageAvailableListener(reader -> onPreview(reader, ticket), handler);
@@ -219,10 +223,10 @@ final class CameraSession {
         try {
             if (ticket != generation || listener == null) return;
             long now = SystemClock.elapsedRealtime();
-            if (now - lastPreview < 70) return;
-            byte[] jpeg = yuvToJpeg(image, orientation());
+            if (now - lastPreview < PREVIEW_INTERVAL_MS) return;
+            byte[] jpeg = yuvToJpeg(image);
             lastPreview = now;
-            listener.onFrame(jpeg);
+            listener.onFrame(jpeg, orientation());
         } catch (Exception ignored) {
         } finally {
             image.close();
@@ -285,53 +289,70 @@ final class CameraSession {
         stillReader = null;
     }
 
-    static byte[] yuvToJpeg(Image image, int angle) {
+    /** Encodes once in sensor orientation; the web view rotates the frame on the GPU. */
+    private byte[] yuvToJpeg(Image image) {
         int width = image.getWidth();
         int height = image.getHeight();
-        byte[] nv21 = toNv21(image);
-        YuvImage yuv = new YuvImage(nv21, ImageFormat.NV21, width, height, null);
-        ByteArrayOutputStream encoded = new ByteArrayOutputStream();
-        yuv.compressToJpeg(new Rect(0, 0, width, height), 70, encoded);
-        if (angle % 360 == 0) return encoded.toByteArray();
-        Bitmap bitmap = BitmapFactory.decodeByteArray(encoded.toByteArray(), 0, encoded.size());
-        if (bitmap == null) return encoded.toByteArray();
-        Matrix matrix = new Matrix();
-        matrix.postRotate(angle);
-        Bitmap rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
-        ByteArrayOutputStream upright = new ByteArrayOutputStream();
-        rotated.compress(Bitmap.CompressFormat.JPEG, 70, upright);
-        if (rotated != bitmap) rotated.recycle();
-        bitmap.recycle();
-        return upright.toByteArray();
+        YuvImage yuv = new YuvImage(toNv21(image), ImageFormat.NV21, width, height, null);
+        encoded.reset();
+        yuv.compressToJpeg(new Rect(0, 0, width, height), PREVIEW_QUALITY, encoded);
+        return encoded.toByteArray();
     }
 
-    static byte[] toNv21(Image image) {
+    private byte[] toNv21(Image image) {
         int width = image.getWidth();
         int height = image.getHeight();
-        byte[] nv21 = new byte[width * height * 3 / 2];
+        int size = width * height * 3 / 2;
+        if (nv21 == null || nv21.length != size) nv21 = new byte[size];
         Image.Plane yPlane = image.getPlanes()[0];
         Image.Plane uPlane = image.getPlanes()[1];
         Image.Plane vPlane = image.getPlanes()[2];
-        ByteBuffer yBuffer = yPlane.getBuffer().duplicate();
-        ByteBuffer uBuffer = uPlane.getBuffer().duplicate();
-        ByteBuffer vBuffer = vPlane.getBuffer().duplicate();
-        int yBase = yBuffer.position();
-        int uBase = uBuffer.position();
-        int vBase = vBuffer.position();
-        int pos = 0;
-        for (int row = 0; row < height; row++) {
-            for (int col = 0; col < width; col++) {
-                nv21[pos++] = yBuffer.get(yBase + row * yPlane.getRowStride() + col * yPlane.getPixelStride());
-            }
-        }
+        int pos = copyPlane(yPlane, width, height, nv21, 0);
         int chromaHeight = height / 2;
         int chromaWidth = width / 2;
+        ByteBuffer uBuffer = uPlane.getBuffer().duplicate();
+        ByteBuffer vBuffer = vPlane.getBuffer().duplicate();
+        int uStride = uPlane.getPixelStride();
+        int vStride = vPlane.getPixelStride();
+        int uSpan = (chromaWidth - 1) * uStride + 1;
+        int vSpan = (chromaWidth - 1) * vStride + 1;
+        if (rowA == null || rowA.length < vSpan) rowA = new byte[vSpan];
+        if (rowB == null || rowB.length < uSpan) rowB = new byte[uSpan];
+        int uBase = uBuffer.position();
+        int vBase = vBuffer.position();
         for (int row = 0; row < chromaHeight; row++) {
+            vBuffer.position(vBase + row * vPlane.getRowStride());
+            vBuffer.get(rowA, 0, vSpan);
+            uBuffer.position(uBase + row * uPlane.getRowStride());
+            uBuffer.get(rowB, 0, uSpan);
             for (int col = 0; col < chromaWidth; col++) {
-                nv21[pos++] = vBuffer.get(vBase + row * vPlane.getRowStride() + col * vPlane.getPixelStride());
-                nv21[pos++] = uBuffer.get(uBase + row * uPlane.getRowStride() + col * uPlane.getPixelStride());
+                nv21[pos++] = rowA[col * vStride];
+                nv21[pos++] = rowB[col * uStride];
             }
         }
         return nv21;
+    }
+
+    private int copyPlane(Image.Plane plane, int width, int height, byte[] out, int pos) {
+        ByteBuffer buffer = plane.getBuffer().duplicate();
+        int base = buffer.position();
+        int rowStride = plane.getRowStride();
+        int pixelStride = plane.getPixelStride();
+        if (pixelStride == 1) {
+            for (int row = 0; row < height; row++) {
+                buffer.position(base + row * rowStride);
+                buffer.get(out, pos, width);
+                pos += width;
+            }
+            return pos;
+        }
+        int span = (width - 1) * pixelStride + 1;
+        if (rowA == null || rowA.length < span) rowA = new byte[span];
+        for (int row = 0; row < height; row++) {
+            buffer.position(base + row * rowStride);
+            buffer.get(rowA, 0, span);
+            for (int col = 0; col < width; col++) out[pos++] = rowA[col * pixelStride];
+        }
+        return pos;
     }
 }

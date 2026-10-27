@@ -96,6 +96,29 @@ final class CameraCatalog {
         return best;
     }
 
+    /** Largest size within the edge limit that keeps the still's aspect, so the preview is not a cropped 16:9 band. */
+    static Size chooseMatching(CameraCharacteristics characteristics, int format, int maxLongEdge, Size still) {
+        StreamConfigurationMap map = characteristics == null ? null : characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+        Size[] sizes = map == null ? null : map.getOutputSizes(format);
+        if (sizes == null || sizes.length == 0 || still == null || still.getHeight() == 0) {
+            return choose(characteristics, format, maxLongEdge);
+        }
+        double target = (double) still.getWidth() / still.getHeight();
+        Size best = null;
+        int bestArea = -1;
+        for (Size size : sizes) {
+            if (size.getHeight() == 0) continue;
+            int edge = Math.max(size.getWidth(), size.getHeight());
+            double aspect = (double) size.getWidth() / size.getHeight();
+            int area = size.getWidth() * size.getHeight();
+            if (edge <= maxLongEdge && Math.abs(aspect - target) < 0.02 && area > bestArea) {
+                best = size;
+                bestArea = area;
+            }
+        }
+        return best != null ? best : choose(characteristics, format, maxLongEdge);
+    }
+
     static Size chooseLargest(CameraCharacteristics characteristics, int format, int maxLongEdge) {
         StreamConfigurationMap map = characteristics == null ? null : characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
         Size[] sizes = map == null ? null : map.getOutputSizes(format);
