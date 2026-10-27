@@ -1,27 +1,44 @@
 import { describe, expect, it } from "vitest";
-import { coverScale, nextPreviewEdge } from "../src/lib/finder";
+import { coverScale, nextPreviewEdge, nextRefresh, PREVIEW_MAX, PREVIEW_MIN } from "../src/lib/finder";
+
+const HZ60 = 1000 / 60;
 
 describe("finder pace", () => {
-  it("shrinks the preview after repeated slow frames and keeps a floor", () => {
-    const once = nextPreviewEdge(960, 40, 0, 0);
-    expect(once.edge).toBe(960);
-    expect(once.slow).toBe(1);
-    const twice = nextPreviewEdge(once.edge, 40, once.slow, once.fast);
-    expect(twice.edge).toBe(Math.round(960 * 0.7));
-    expect(twice.slow).toBe(0);
-    let edge = 320;
-    let slow = 1;
-    const floored = nextPreviewEdge(edge, 40, slow, 0);
-    expect(floored.edge).toBe(320);
+  it("keeps the preview size through a single stutter", () => {
+    let state = { edge: 1280, slow: 0, fast: 0 };
+    state = nextPreviewEdge(state.edge, 60, state.slow, state.fast, HZ60);
+    state = nextPreviewEdge(state.edge, HZ60, state.slow, state.fast, HZ60);
+    state = nextPreviewEdge(state.edge, 60, state.slow, state.fast, HZ60);
+    expect(state.edge).toBe(1280);
   });
 
-  it("grows the preview only after a run of fast frames", () => {
-    let state = { edge: 480, slow: 0, fast: 0 };
-    for (let i = 0; i < 29; i += 1) state = nextPreviewEdge(state.edge, 8, state.slow, state.fast);
-    expect(state.edge).toBe(480);
-    state = nextPreviewEdge(state.edge, 8, state.slow, state.fast);
-    expect(state.edge).toBe(Math.round(480 * 1.2));
-    expect(nextPreviewEdge(1280, 8, 0, 40).edge).toBe(1280);
+  it("shrinks the preview after a run of slow frames and keeps a floor", () => {
+    let state = { edge: 1280, slow: 0, fast: 0 };
+    for (let i = 0; i < 3; i += 1) state = nextPreviewEdge(state.edge, 50, state.slow, state.fast, HZ60);
+    expect(state.edge).toBe(1280);
+    state = nextPreviewEdge(state.edge, 50, state.slow, state.fast, HZ60);
+    expect(state.edge).toBe(Math.round(1280 * 0.8));
+    expect(state.slow).toBe(0);
+    for (let i = 0; i < 40; i += 1) state = nextPreviewEdge(state.edge, 50, state.slow, state.fast, HZ60);
+    expect(state.edge).toBe(PREVIEW_MIN);
+  });
+
+  it("grows back on a 60 Hz display once frames keep up", () => {
+    let state = { edge: PREVIEW_MIN, slow: 0, fast: 0 };
+    for (let i = 0; i < 29; i += 1) state = nextPreviewEdge(state.edge, HZ60, state.slow, state.fast, HZ60);
+    expect(state.edge).toBe(PREVIEW_MIN);
+    state = nextPreviewEdge(state.edge, HZ60, state.slow, state.fast, HZ60);
+    expect(state.edge).toBe(Math.round(PREVIEW_MIN * 1.2));
+    expect(nextPreviewEdge(PREVIEW_MAX, HZ60, 0, 40, HZ60).edge).toBe(PREVIEW_MAX);
+  });
+
+  it("learns the display interval from the shortest recent gaps", () => {
+    let refresh = HZ60;
+    refresh = nextRefresh(refresh, 1000 / 120);
+    expect(refresh).toBeCloseTo(1000 / 120);
+    refresh = nextRefresh(refresh, 60);
+    expect(refresh).toBeLessThan(9);
+    expect(nextRefresh(refresh, 1)).toBeGreaterThanOrEqual(4);
   });
 });
 

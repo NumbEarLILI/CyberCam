@@ -19,6 +19,7 @@ export type Finder = {
     height: number,
     grade: FinderGrade,
     zoom?: number,
+    fresh?: boolean,
   ): boolean;
   noteFrame(gapMs: number): void;
   destroy(): void;
@@ -163,18 +164,21 @@ void main() {
   oColor = vec4(linearToSrgb(vec3(nr, ng, nb)), 1.0);
 }`;
 
-const PREVIEW_MAX = 1280;
-const PREVIEW_MIN = 320;
+export const PREVIEW_MAX = 1920;
+export const PREVIEW_MIN = 720;
+const CPU_PREVIEW_EDGE = 320;
+const MIN_REFRESH_MS = 4;
 
-export function nextPreviewEdge(edge: number, elapsedMs: number, slow: number, fast: number) {
-  if (elapsedMs > 26) {
+/** Frame gaps are judged against the display interval, so a 60 Hz panel can still grow the preview. */
+export function nextPreviewEdge(edge: number, elapsedMs: number, slow: number, fast: number, refreshMs = 1000 / 60) {
+  if (elapsedMs > refreshMs * 1.8) {
     const nextSlow = slow + 1;
-    if (nextSlow >= 2 && edge > PREVIEW_MIN) {
-      return { edge: Math.max(PREVIEW_MIN, Math.round(edge * 0.7)), slow: 0, fast: 0 };
+    if (nextSlow >= 4 && edge > PREVIEW_MIN) {
+      return { edge: Math.max(PREVIEW_MIN, Math.round(edge * 0.8)), slow: 0, fast: 0 };
     }
     return { edge, slow: nextSlow, fast: 0 };
   }
-  if (elapsedMs < 12) {
+  if (elapsedMs < refreshMs * 1.3) {
     const nextFast = fast + 1;
     if (nextFast >= 30 && edge < PREVIEW_MAX) {
       return { edge: Math.min(PREVIEW_MAX, Math.round(edge * 1.2)), slow: 0, fast: 0 };
@@ -182,6 +186,11 @@ export function nextPreviewEdge(edge: number, elapsedMs: number, slow: number, f
     return { edge, slow: 0, fast: nextFast };
   }
   return { edge, slow: 0, fast: 0 };
+}
+
+/** Tracks the shortest recent frame gap and drifts up slowly in case the display slows down. */
+export function nextRefresh(refreshMs: number, gapMs: number) {
+  return Math.max(MIN_REFRESH_MS, Math.min(refreshMs * 1.002, gapMs));
 }
 
 export function createFinder(canvas: HTMLCanvasElement): Finder {
@@ -207,6 +216,7 @@ class GpuFinder implements Finder {
   private sourceWidth = 0;
   private sourceHeight = 0;
   private cap = PREVIEW_MAX;
+  private refresh = 1000 / 60;
   private slow = 0;
   private fast = 0;
   private readonly matrix = new Float32Array(9);
@@ -275,7 +285,7 @@ class GpuFinder implements Finder {
     return new GpuFinder(gl, canvas, program, sourceTex, vao, buffer);
   }
 
-  draw(source: CanvasImageSource, sourceWidth: number, sourceHeight: number, width: number, height: number, grade: FinderGrade, zoom = 1) {
+  draw(source: CanvasImageSource, sourceWidth: number, sourceHeight: number, width: number, height: number, grade: FinderGrade, zoom = 1, fresh = true) {
     if (sourceWidth < 2 || sourceHeight < 2 || width < 2 || height < 2) return false;
     const gl = this.gl;
     const size = fitBuffer(width, height, this.cap);
@@ -294,7 +304,7 @@ class GpuFinder implements Finder {
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
       this.sourceWidth = sourceWidth;
       this.sourceHeight = sourceHeight;
-    } else {
+    } else if (fresh) {
       gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
     }
     gl.useProgram(this.program);
@@ -329,7 +339,8 @@ class GpuFinder implements Finder {
 
   noteFrame(gapMs: number) {
     if (gapMs > 100) return;
-    const next = nextPreviewEdge(this.cap, gapMs, this.slow, this.fast);
+    this.refresh = nextRefresh(this.refresh, gapMs);
+    const next = nextPreviewEdge(this.cap, gapMs, this.slow, this.fast, this.refresh);
     this.cap = next.edge;
     this.slow = next.slow;
     this.fast = next.fast;
@@ -351,7 +362,7 @@ function createCpuFinder(canvas: HTMLCanvasElement): Finder {
   return {
     draw(source, sourceWidth, sourceHeight, width, height, grade, zoom = 1) {
       if (!scratchCtx || !out || sourceWidth < 2 || sourceHeight < 2) return false;
-      const size = fitBuffer(width, height, PREVIEW_MIN);
+      const size = fitBuffer(width, height, CPU_PREVIEW_EDGE);
       const image = readSource(source, sourceWidth, sourceHeight, grade.mirror, 160, zoom);
       const optics = applyCamera(rawToFloat(rgba8ToRaw(image.data, image.width, image.height)), grade.camera, grade.ev);
       const rgba = applyFilm(optics, grade.film, { grain: false });
