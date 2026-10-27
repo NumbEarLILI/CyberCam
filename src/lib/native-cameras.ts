@@ -1,12 +1,13 @@
 import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor/core";
 import type { HardwareCamera, HardwareFacing } from "./lenses";
+import { decodeBase64 } from "./native-frames";
 
 type DeviceCamerasPlugin = {
   list(): Promise<{ cameras: HardwareCamera[] }>;
   start(options: { id: string }): Promise<void>;
   stop(): Promise<void>;
   capture(): Promise<{ jpeg: string }>;
-  addListener(eventName: "frame", listener: (event: { jpeg: string }) => void): Promise<PluginListenerHandle>;
+  addListener(eventName: "frame", listener: (event: { jpeg: string; rotation?: number }) => void): Promise<PluginListenerHandle>;
   addListener(eventName: "orientation", listener: (event: { orientation: number }) => void): Promise<PluginListenerHandle>;
 };
 
@@ -33,9 +34,11 @@ export function captureHardwareStill() {
   return DeviceCameras.capture().then((result) => result.jpeg);
 }
 
-export function onHardwareFrame(listener: (jpeg: string) => void) {
+export type HardwareFrame = { jpeg: string; rotation: number };
+
+export function onHardwareFrame(listener: (frame: HardwareFrame) => void) {
   return DeviceCameras.addListener("frame", (event) => {
-    if (event.jpeg) listener(event.jpeg);
+    if (event.jpeg) listener({ jpeg: event.jpeg, rotation: Number(event.rotation) || 0 });
   });
 }
 
@@ -45,16 +48,36 @@ export function onHardwareOrientation(listener: (orientation: number) => void) {
   });
 }
 
-export async function drawHardwareFrame(canvas: HTMLCanvasElement | null, jpeg: string) {
-  if (!canvas || !jpeg) return;
-  const bytes = Uint8Array.from(atob(jpeg), (char) => char.charCodeAt(0));
-  const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/jpeg" }));
+/** Draws a camera JPEG upright. Preview frames arrive in sensor orientation and carry a clockwise rotation. */
+export async function drawHardwareFrame(
+  canvas: HTMLCanvasElement | null,
+  jpeg: string,
+  rotation = 0,
+  shouldDraw: () => boolean = () => true,
+) {
+  if (!canvas || !jpeg) return false;
+  const bitmap = await createImageBitmap(new Blob([decodeBase64(jpeg) as BlobPart], { type: "image/jpeg" }));
   try {
-    if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
-      canvas.width = bitmap.width;
-      canvas.height = bitmap.height;
+    if (!shouldDraw()) return false;
+    const turn = ((Math.round(rotation / 90) % 4) + 4) % 4;
+    const width = turn % 2 ? bitmap.height : bitmap.width;
+    const height = turn % 2 ? bitmap.width : bitmap.height;
+    if (canvas.width !== width || canvas.height !== height) {
+      canvas.width = width;
+      canvas.height = height;
     }
-    canvas.getContext("2d")?.drawImage(bitmap, 0, 0);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return false;
+    if (turn === 0) {
+      ctx.drawImage(bitmap, 0, 0);
+    } else {
+      ctx.save();
+      ctx.translate(width / 2, height / 2);
+      ctx.rotate((turn * Math.PI) / 2);
+      ctx.drawImage(bitmap, -bitmap.width / 2, -bitmap.height / 2);
+      ctx.restore();
+    }
+    return true;
   } finally {
     bitmap.close();
   }
