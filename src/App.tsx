@@ -13,7 +13,8 @@ import { createFinder } from "./lib/finder";
 import { framedProfile, frameSize, orientedAspect, sensorConstraints, SENSOR_HEIGHT, SENSOR_WIDTH, STILL_MAX_EDGE } from "./lib/frame";
 import { holdFromOrientation, holdFromTilt, stillQuarter, visibleHold, type Hold } from "./lib/hold";
 import { hardwareLensLabel, lensLabel, preferredHardwareCamera, shouldMirrorTrack, type HardwareCamera, type Lens } from "./lib/lenses";
-import { captureHardwareStill, drawHardwareFrame, listHardwareCameras, nativeCamerasSupported, onHardwareFrame, onHardwareOrientation, startHardwareCamera, stopHardwareCamera } from "./lib/native-cameras";
+import { captureHardwareStill, drawHardwareFrame, listHardwareCameras, nativeCamerasSupported, onHardwareFrame, onHardwareOrientation, startHardwareCamera, stopHardwareCamera, type HardwareFrame } from "./lib/native-cameras";
+import { latestOnly } from "./lib/native-frames";
 import { streamNeedsRestart } from "./lib/preview-session";
 import { encodeRaw, rgba8ToRaw } from "./lib/raw";
 import { clampZoom, formatZoom, stepZoom } from "./lib/zoom";
@@ -58,6 +59,7 @@ export function App() {
   const busy = useRef(false);
   const [frame, setFrame] = useState({ width: 0, height: 0 });
   const sensorEpoch = useRef(0);
+  const nativeFrame = useRef(0);
   const portraitRef = useRef(typeof window !== "undefined" && window.matchMedia("(orientation: portrait)").matches);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const pinch = useRef<{ distance: number; zoom: number } | null>(null);
@@ -230,9 +232,12 @@ export function App() {
           await stopHardwareCamera();
           return;
         }
-        const handle = await onHardwareFrame((jpeg) => {
-          if (cancelled || busy.current) return;
-          void drawHardwareFrame(sensorRef.current, jpeg);
+        const live = () => !cancelled && !busy.current;
+        const show = latestOnly<HardwareFrame>(async (next) => {
+          if (await drawHardwareFrame(sensorRef.current, next.jpeg, next.rotation, live)) nativeFrame.current += 1;
+        });
+        const handle = await onHardwareFrame((next) => {
+          if (live()) show(next);
         });
         if (cancelled) {
           await handle.remove();
@@ -357,6 +362,7 @@ export function App() {
     let pageVisible = document.visibilityState !== "hidden";
     let signature = "";
     let lastLiveDraw = 0;
+    let uploadedFrame = -1;
     const schedule = () => {
       if (stop || !pageVisible || raf) return;
       raf = requestAnimationFrame(() => {
@@ -386,7 +392,9 @@ export function App() {
         if (live && state.backend === "native") {
           const sensor = sensorRef.current;
           if (sensor && sensor.width > 1 && sensor.height > 1) {
-            drew = finder.draw(sensor, sensor.width, sensor.height, bufferW, bufferH, grade, state.zoom);
+            const current = nativeFrame.current;
+            drew = finder.draw(sensor, sensor.width, sensor.height, bufferW, bufferH, grade, state.zoom, current !== uploadedFrame);
+            if (drew) uploadedFrame = current;
           }
         } else if (live) {
           const video = videoRef.current;
